@@ -1,13 +1,15 @@
-"""T3 — Métricas distritales: baseline + especificación alternativa + índice compuesto + sensibilidad.
+"""T3 — Índice de cobertura de emergencia en escala [0, 1].
 
-Construye dos conjuntos de métricas para cada distrito:
+Construye dos especificaciones del mismo índice:
 
-  * BASELINE: densidad por km², umbral de acceso 30 km, actividad log.
-  * ALTERNATIVA: oferta por centro poblado, umbral estricto 15 km, actividad log.
+  * BASELINE: oferta por km², umbral de acceso 30 km.
+  * ALTERNATIVA: oferta por centro poblado, umbral estricto 15 km.
 
-Ambas se combinan en un índice de subatención via z-scores invertidos (+mayor
-= más desatendido). La sensibilidad se reporta como correlación de Spearman
-entre rankings + tabla de diferencias de posición por distrito.
+Cada componente se normaliza a [0, 1] (min-max con log-transform para las
+dimensiones sesgadas) y se promedia. Resultado: un único escalar por distrito
+donde **1 = mejor atendido** y **0 = peor atendido**. La sensibilidad se
+reporta como Spearman entre los dos rankings + tabla de diferencias por
+distrito.
 """
 
 from __future__ import annotations
@@ -32,16 +34,20 @@ def _area_km2(gdf: gpd.GeoDataFrame) -> pd.Series:
     return gdf.to_crs(CRS_PERU_UTM).geometry.area / 1e6
 
 
-def _zscore_safe(x: pd.Series) -> pd.Series:
+def _min_max_01(x: pd.Series) -> pd.Series:
+    """Escala una serie a [0, 1] con min-max. Devuelve 0 si es constante."""
     x = pd.Series(x, dtype="float64")
-    mu = x.mean(skipna=True)
-    sd = x.std(skipna=True)
-    if not np.isfinite(sd) or sd == 0:
-        return pd.Series(np.zeros(len(x)), index=x.index)
-    return ((x - mu) / sd).fillna(0)
+    lo = x.min(skipna=True)
+    hi = x.max(skipna=True)
+    if not np.isfinite(hi - lo) or (hi - lo) == 0:
+        return pd.Series(0.0, index=x.index)
+    out = (x - lo) / (hi - lo)
+    return out.clip(lower=0.0, upper=1.0).fillna(0.0)
 
 
-def _cp_access_share(ccpp_with_dist: gpd.GeoDataFrame, threshold_km: float, col_name: str) -> pd.DataFrame:
+def _cp_access_share(
+    ccpp_with_dist: gpd.GeoDataFrame, threshold_km: float, col_name: str
+) -> pd.DataFrame:
     df = ccpp_with_dist[["ubigeo", "dist_to_emergency_km"]].copy()
     df["within"] = df["dist_to_emergency_km"] <= threshold_km
     out = df.groupby("ubigeo", dropna=True, as_index=False)["within"].mean()
@@ -53,35 +59,32 @@ def _cp_access_share(ccpp_with_dist: gpd.GeoDataFrame, threshold_km: float, col_
 def compute_baseline(
     district_integrated: gpd.GeoDataFrame, ccpp_with_dist: gpd.GeoDataFrame
 ) -> gpd.GeoDataFrame:
+    """Baseline: oferta por km², acceso 30 km, actividad log."""
     out = district_integrated.copy()
     out["area_km2"] = _area_km2(out)
 
-    # Supply densities per 100 km²
     safe_area = out["area_km2"].replace(0, np.nan)
     out["n_facilities_per_100km2"] = 100 * out["n_facilities"] / safe_area
     out["n_emergency_per_100km2"] = 100 * out["n_emergency_facilities"] / safe_area
 
-    # Access share (30 km baseline)
     access = _cp_access_share(ccpp_with_dist, ACCESS_THRESHOLD_KM_BASELINE, "share_cp_within_30km")
     out = out.merge(access, on="ubigeo", how="left")
 
-    # Activity (log)
     out["log_atenciones"] = np.log1p(out["total_atenciones"].fillna(0))
+
+    # Componentes [0, 1] — mayor = mejor atendido
+    out["supply_01_baseline"] = _min_max_01(
+        np.log1p(out["n_emergency_per_100km2"].fillna(0))
+    )
+    out["activity_01"] = _min_max_01(np.log1p(out["total_atenciones"].fillna(0)))
+    out["access_01_baseline"] = out["share_cp_within_30km"].fillna(0).clip(0, 1)
+
+    out["coverage_index_baseline"] = (
+        out["supply_01_baseline"]
+        + out["activity_01"]
+        + out["access_01_baseline"]
+    ) / 3
     return out
-
-
-def add_composite_underservice(baseline: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Índice compuesto: mayor valor = más desatendido.
-    Promedio de z-scores invertidos (mult por -1) en 3 dimensiones."""
-    df = baseline.copy()
-    z_supply = -_zscore_safe(df["n_emergency_per_100km2"])
-    z_activity = -_zscore_safe(df["log_atenciones"])
-    z_access = -_zscore_safe(df["share_cp_within_30km"])
-    df["z_supply_baseline"] = z_supply
-    df["z_activity_baseline"] = z_activity
-    df["z_access_baseline"] = z_access
-    df["underservice_index_baseline"] = (z_supply + z_activity + z_access) / 3
-    return df
 
 
 # --- Alternativa --------------------------------------------------------------
@@ -89,28 +92,28 @@ def add_composite_underservice(baseline: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 def compute_alternative(
     district_integrated: gpd.GeoDataFrame, ccpp_with_dist: gpd.GeoDataFrame
 ) -> gpd.GeoDataFrame:
+    """Alternativa: oferta por CP, acceso 15 km, actividad log."""
     out = district_integrated.copy()
 
-    # Supply per CCPP (no por área): más sensible a distritos rurales con
-    # muchos CPs pequeños vs urbanos densos de pocos CPs.
     safe_ccpp = out["n_ccpp"].replace(0, np.nan)
     out["n_facilities_per_ccpp"] = out["n_facilities"] / safe_ccpp
     out["n_emergency_per_ccpp"] = out["n_emergency_facilities"] / safe_ccpp
 
-    # Access share (15 km — umbral más exigente)
     access = _cp_access_share(ccpp_with_dist, ACCESS_THRESHOLD_KM_ALT, "share_cp_within_15km")
     out = out.merge(access, on="ubigeo", how="left")
 
     out["log_atenciones"] = np.log1p(out["total_atenciones"].fillna(0))
 
-    # Índice compuesto alternativo
-    z_supply = -_zscore_safe(out["n_emergency_per_ccpp"])
-    z_activity = -_zscore_safe(out["log_atenciones"])
-    z_access = -_zscore_safe(out["share_cp_within_15km"])
-    out["z_supply_alt"] = z_supply
-    out["z_activity_alt"] = z_activity
-    out["z_access_alt"] = z_access
-    out["underservice_index_alt"] = (z_supply + z_activity + z_access) / 3
+    # Componentes [0, 1] — mismas reglas que baseline
+    out["supply_01_alt"] = _min_max_01(
+        np.log1p(out["n_emergency_per_ccpp"].fillna(0))
+    )
+    out["activity_01_alt"] = _min_max_01(np.log1p(out["total_atenciones"].fillna(0)))
+    out["access_01_alt"] = out["share_cp_within_15km"].fillna(0).clip(0, 1)
+
+    out["coverage_index_alt"] = (
+        out["supply_01_alt"] + out["activity_01_alt"] + out["access_01_alt"]
+    ) / 3
     return out
 
 
@@ -119,13 +122,20 @@ def compute_alternative(
 def sensitivity_table(
     baseline: gpd.GeoDataFrame, alternative: gpd.GeoDataFrame
 ) -> tuple[pd.DataFrame, float]:
-    b = baseline[["ubigeo", "departamento", "provincia", "distrito", "underservice_index_baseline"]].copy()
-    a = alternative[["ubigeo", "underservice_index_alt"]].copy()
+    b = baseline[
+        ["ubigeo", "departamento", "provincia", "distrito", "coverage_index_baseline"]
+    ].copy()
+    a = alternative[["ubigeo", "coverage_index_alt"]].copy()
     joined = b.merge(a, on="ubigeo", how="inner").dropna(
-        subset=["underservice_index_baseline", "underservice_index_alt"]
+        subset=["coverage_index_baseline", "coverage_index_alt"]
     )
-    joined["rank_baseline"] = joined["underservice_index_baseline"].rank(ascending=False, method="min")
-    joined["rank_alternative"] = joined["underservice_index_alt"].rank(ascending=False, method="min")
+    # rank ascending: rank 1 = menor cobertura = peor atendido
+    joined["rank_baseline"] = joined["coverage_index_baseline"].rank(
+        ascending=True, method="min"
+    )
+    joined["rank_alternative"] = joined["coverage_index_alt"].rank(
+        ascending=True, method="min"
+    )
     joined["rank_diff"] = (joined["rank_alternative"] - joined["rank_baseline"]).astype(int)
     joined = joined.sort_values("rank_baseline").reset_index(drop=True)
 
@@ -136,18 +146,25 @@ def sensitivity_table(
 # --- Main ----------------------------------------------------------------------
 
 def main() -> None:
-    log.info("=== T3: DISTRICT METRICS ===")
+    log.info("=== T3: COVERAGE INDEX [0, 1] ===")
     district = gpd.read_parquet(DATA_PROCESSED / "district_integrated.parquet")
     ccpp = gpd.read_parquet(DATA_PROCESSED / "ccpp_with_distance.parquet")
 
     baseline = compute_baseline(district, ccpp)
-    baseline = add_composite_underservice(baseline)
     alternative = compute_alternative(district, ccpp)
 
     sensitivity, rho = sensitivity_table(baseline, alternative)
     log.info(f"Spearman(ranking baseline, ranking alternativa) = {rho:.4f}")
 
-    # Guardar
+    # Sanity check: ambos índices en [0, 1]
+    for c in ("coverage_index_baseline", "coverage_index_alt"):
+        df = baseline if c == "coverage_index_baseline" else alternative
+        v = df[c].dropna()
+        assert v.between(0.0, 1.0).all(), (
+            f"{c} fuera de rango [0, 1]: min={v.min()}, max={v.max()}"
+        )
+    log.info("Sanity check OK — ambos índices en [0, 1]")
+
     TABLES.mkdir(parents=True, exist_ok=True)
     baseline_cols = [c for c in baseline.columns if c != "geometry"]
     alt_cols = [c for c in alternative.columns if c != "geometry"]
@@ -155,7 +172,6 @@ def main() -> None:
     alternative[alt_cols].to_csv(TABLES / "district_metrics_alternative.csv", index=False)
     sensitivity.to_csv(TABLES / "sensitivity_ranking.csv", index=False)
 
-    # Parquet combinado (para T4, T5, T6)
     overlap = [c for c in alternative.columns if c in baseline.columns and c not in ("ubigeo", "geometry")]
     combined = baseline.merge(
         alternative.drop(columns=overlap + (["geometry"] if "geometry" in alternative.columns else [])),
@@ -165,27 +181,23 @@ def main() -> None:
     combined.to_parquet(DATA_PROCESSED / "district_metrics.parquet")
     log.info(f"wrote district_metrics.parquet ({len(combined):,} filas × {len(combined.columns)} cols)")
 
-    # Resumen ejecutivo
-    log.info("TOP 10 más subatendidos (baseline):")
-    top = baseline.nlargest(10, "underservice_index_baseline")[
-        ["departamento", "provincia", "distrito", "underservice_index_baseline",
-         "n_emergency_facilities", "share_cp_within_30km"]
-    ]
-    print(top.to_string(index=False))
+    # Resumen ejecutivo — ahora rank 1 = PEOR atendido, última fila = MEJOR
+    log.info("TOP 10 PEOR atendidos (menor coverage_index_baseline):")
+    worst = (
+        baseline.sort_values(["coverage_index_baseline", "n_ccpp"], ascending=[True, False])
+        .head(10)[[
+            "departamento", "provincia", "distrito", "coverage_index_baseline",
+            "supply_01_baseline", "activity_01", "access_01_baseline",
+        ]]
+    )
+    print(worst.to_string(index=False))
 
-    log.info("BOTTOM 10 mejor atendidos (baseline):")
-    bottom = baseline.nsmallest(10, "underservice_index_baseline")[
-        ["departamento", "provincia", "distrito", "underservice_index_baseline",
-         "n_emergency_facilities", "share_cp_within_30km"]
-    ]
-    print(bottom.to_string(index=False))
-
-    # Movers más fuertes entre baseline y alternativa
-    top_movers = sensitivity.reindex(sensitivity["rank_diff"].abs().sort_values(ascending=False).index).head(10)
-    log.info("Distritos con mayor cambio de ranking (|baseline - alternativa|):")
-    print(top_movers[
-        ["departamento", "provincia", "distrito", "rank_baseline", "rank_alternative", "rank_diff"]
-    ].to_string(index=False))
+    log.info("TOP 10 MEJOR atendidos (mayor coverage_index_baseline):")
+    best = baseline.nlargest(10, "coverage_index_baseline")[[
+        "departamento", "provincia", "distrito", "coverage_index_baseline",
+        "supply_01_baseline", "activity_01", "access_01_baseline",
+    ]]
+    print(best.to_string(index=False))
 
     log.info("=== T3 complete ===")
 
