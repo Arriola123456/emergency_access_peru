@@ -38,19 +38,42 @@
 
 ## Métricas distritales (T3)
 
-### Baseline
-- `n_facilities_per_10k`: IPRESS totales / población × 10 000
-- `mean_dist_cp_to_emergency_km`: promedio simple de la distancia CP → emergencia más cercana
-- `emergency_activity`: suma de atenciones en el período de análisis
-- `access_share_30km`: fracción de centros poblados con emergencia ≤ 30 km
+### Índice de cobertura de emergencia — escala [0, 1]
 
-### Alternativa (sensibilidad)
-- Solo IPRESS con actividad > 0 (no solo existencia formal)
-- Distancia **ponderada por población** del CP (pesos: población del CP)
-- `access_share_15km`: umbral más exigente (15 km)
+Se construye **un único escalar por distrito** a partir de tres dimensiones.
+Cada dimensión se normaliza a `[0, 1]` con min-max (con `log1p` previo para las
+dimensiones sesgadas) y se promedia. Interpretación directa:
 
-### Índice compuesto de subatención
-Z-score de 3 dimensiones (supply, activity, access), promedio invertido → mayor valor = más desatendido.
+- **`I_d = 0`** → el distrito está en el piso simultáneamente en oferta, actividad
+  y acceso (peor atendido).
+- **`I_d = 1`** → el distrito es el máximo observado en las tres dimensiones a la
+  vez (cota superior, inalcanzable en la práctica).
+
+### Especificación baseline
+- Oferta: `n_emergency_per_100km2` (IPRESS con emergencia por 100 km²), log-normalizada.
+- Actividad: `log(1 + total_atenciones)`, normalizada.
+- Acceso: `share_cp_within_30km` (fracción de CPs con IPRESS de emergencia ≤ 30 km). Ya vive en [0, 1], no requiere transformación.
+
+$$I^{\text{base}}_d = \frac{\widetilde{\text{oferta}}_d + \widetilde{\text{actividad}}_d + \widetilde{\text{acceso}}^{30}_d}{3}$$
+
+### Especificación alternativa (sensibilidad)
+- Oferta: `n_emergency_per_ccpp` (IPRESS con emergencia por centro poblado), log-normalizada.
+- Actividad: igual que baseline.
+- Acceso: `share_cp_within_15km` (umbral más estricto).
+
+$$I^{\text{alt}}_d = \frac{\widetilde{\text{oferta}}^{\text{alt}}_d + \widetilde{\text{actividad}}_d + \widetilde{\text{acceso}}^{15}_d}{3}$$
+
+### Normalización min-max con log previo
+
+Para una variable sesgada $X$:
+
+$$\widetilde{X}_d = \frac{\ln(1 + X_d) - \min_d \ln(1 + X_d)}{\max_d \ln(1 + X_d) - \min_d \ln(1 + X_d)} \in [0, 1]$$
+
+### Sensibilidad
+
+Correlación de Spearman entre los dos rankings (rank 1 = peor atendido = menor coverage):
+
+$$\rho_S = \text{Spearman}(\text{rank}(I^{\text{base}}), \text{rank}(I^{\text{alt}})) = 0.891$$
 
 ## Outputs
 
@@ -62,6 +85,10 @@ Z-score de 3 dimensiones (supply, activity, access), promedio invertido → mayo
 
 ## Limitaciones
 
-- La producción de emergencias puede tener subregistro en IPRESS rurales.
-- Los centros poblados tienen censo discreto; la población entre censos es interpolada y no siempre precisa.
-- El umbral de 30 km es convencional; no captura tiempo real de viaje (topografía, vías).
+- La producción de emergencias puede tener subregistro en IPRESS rurales; la actividad medida sesga hacia centros urbanos con mejor registro.
+- Los centros poblados no traen población del INEI en el shapefile público usado; se usa peso uniforme (1 por CP).
+- El umbral de 30 km (baseline) y 15 km (alternativa) es convencional; no captura tiempo real de viaje (topografía, vías, estado de trochas).
+- Distancia euclidiana en UTM, no de viaje.
+- Normalización min-max dependiente de la muestra: el máximo observado define el "1" de la escala. Incorporar o excluir distritos podría mover la escala para todos.
+- Índice compuesto con **pesos iguales** (1/3 por dimensión) — elección de simplicidad, no de principio técnico.
+- Un solo año (2024), sin capturar tendencias ni shocks temporales.

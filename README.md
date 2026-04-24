@@ -92,9 +92,10 @@ streamlit run app/streamlit_app.py
 - **78 %** de los distritos (1,457 / 1,873) **no cuentan** con ningún IPRESS que haya reportado actividad de emergencia en 2024.
 - **Total de atenciones 2024:** ≈ 15.8 millones.
 - **Distancia mediana** desde un centro poblado al IPRESS de emergencia más cercano: **22.8 km**; máxima: 377 km (Amazonía).
-- **Top distritos más subatendidos (baseline):** Tarata, Puerto Inca, Padre Abad (Amazonía y puna rural — cero oferta, cero acceso).
-- **Mejor atendidos:** Jesús María, Bellavista, Lince, Miraflores, Pueblo Libre (Lima metropolitana y Callao).
-- **Sensibilidad al cambio de especificación:** Spearman ρ = **0.876** entre el ranking baseline (umbral 30 km, densidad por km²) y la alternativa (umbral 15 km, oferta por centro poblado). La conclusión cualitativa se mantiene, pero hay reordenamientos notables en el tramo medio del ranking.
+- **Índice de cobertura de emergencia en [0, 1]** — 1 = mejor atendido, 0 = peor. Se construye como promedio simple de 3 dimensiones normalizadas a [0, 1]: oferta (densidad de emergencia por km², log-normalizada), actividad (log-atenciones, normalizada) y acceso (share de CPs con emergencia ≤ 30 km).
+- **Top distritos peor atendidos (cobertura ≈ 0):** Ayabaca (Piura), Pisacoma (Puno), Jacas Grande (Huánuco), Ocoyo (Huancavelica) — todos con cero oferta, cero actividad y cero acceso simultáneamente.
+- **Mejor atendidos (cobertura ≈ 0.95):** Jesús María (0.97), Bellavista (0.96), Arequipa cercado (0.95), Lima cercado (0.92), Miraflores (0.90) — ningún distrito alcanza el 1 perfecto.
+- **Sensibilidad al cambio de especificación:** Spearman ρ = **0.891** entre el ranking baseline (umbral 30 km, densidad por km²) y la alternativa (umbral 15 km, oferta por centro poblado). La conclusión cualitativa se mantiene, pero hay reordenamientos notables en el tramo medio del ranking.
 
 ## Video explicativo
 

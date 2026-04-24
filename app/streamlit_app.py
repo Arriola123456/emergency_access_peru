@@ -115,8 +115,9 @@ ejemplo, "nº de postas por distrito"), lo que esconde tres problemas:
    solo corte puede invertirse con otro.
 
 Este proyecto combina oferta, actividad y acceso espacial en un **único índice
-compuesto de subatención por distrito**, y compara dos especificaciones para medir la
-robustez de los resultados.
+de cobertura de emergencia por distrito**, construido en la escala **[0, 1]** (donde
+**1 = mejor atendido** y **0 = peor atendido**), y compara dos especificaciones
+para medir la robustez de los resultados.
         """
     )
 
@@ -313,19 +314,24 @@ ajustamos?
 | D6 | `log(1 + atenciones)` | La distribución de atenciones es muy sesgada (hospitales grandes de Lima vs rurales); `log1p` estabiliza y maneja ceros. |
 | D7 | Umbral de acceso **30 km** (baseline) | Benchmark común en estudios de acceso rural en Perú (aprox. 1 hora por trocha en condiciones razonables). |
 | D8 | Umbral **15 km** en alternativa | Stresstest: ¿qué pasa si se exige el doble de cercanía? |
-| D9 | Índice compuesto = **media** de z-scores (no suma) | Escalado uniforme para facilitar interpretación. |
-| D10 | Agregación a distrito por el **UBIGEO geométrico** | Consistente con el shapefile, no con el UBIGEO declarado. |
+| D9 | Índice compuesto = **promedio simple** de 3 componentes normalizadas a [0, 1] | Garantiza que el índice total viva en [0, 1]; interpretación directa como *share de cobertura*. |
+| D10 | Normalización min-max con **log-transform** para oferta y actividad | Ambas dimensiones son altamente sesgadas (Lima vs resto). El `log1p` comprime la cola larga antes del min-max, evitando que un megahospital aplaste la escala. |
+| D11 | Agregación a distrito por el **UBIGEO geométrico** | Consistente con el shapefile, no con el UBIGEO declarado. |
         """
     )
 
     # ─────────────────────────────── 6. BASELINE vs ALTERNATIVA (FÓRMULAS) ──
-    st.markdown("## 6. Cálculo de los índices (fórmulas explícitas)")
+    st.markdown("## 6. Cálculo del índice de cobertura (fórmulas explícitas)")
     st.markdown(
         r"""
+El índice resumen está diseñado para vivir en **[0, 1]** con una lectura directa:
+**1 = mejor atendido**, **0 = peor atendido**. Es el promedio simple de tres
+componentes, cada una normalizada a [0, 1].
+
 Para un distrito $d$ (identificado por su UBIGEO), definimos:
 
 - $N^{\text{emerg}}_d$ = número de IPRESS con actividad de emergencia en $d$.
-- $A_d$ = área del distrito en $\text{km}^2$ (medida desde la geometría reproyectada a UTM 18S).
+- $A_d$ = área del distrito en $\text{km}^2$ (geometría reproyectada a UTM 18S).
 - $T_d$ = total de atenciones de emergencia reportadas en 2024 en $d$.
 - $C_d$ = conjunto de centros poblados cuyo UBIGEO cae en $d$.
 - $\text{dist}(c)$ = distancia (km) del centro poblado $c$ al IPRESS de emergencia más cercano.
@@ -340,27 +346,36 @@ Para un distrito $d$ (identificado por su UBIGEO), definimos:
     st.markdown("**Dimensión 2 — Actividad** (uso efectivo, log-transformado):")
     st.latex(r"\text{actividad}_d \;=\; \ln(1 + T_d)")
 
-    st.markdown("**Dimensión 3 — Acceso espacial** (cobertura 30 km desde CPs):")
+    st.markdown("**Dimensión 3 — Acceso espacial** (cobertura 30 km desde CPs, ya en [0, 1]):")
     st.latex(
         r"\text{acceso}^{30}_d \;=\; \frac{\bigl|\{\, c \in C_d \,:\, \text{dist}(c) \leq 30 \,\}\bigr|}{|C_d|}"
     )
 
-    st.markdown("**Estandarización** (z-score sobre los 1 873 distritos):")
-    st.latex(r"z(x_d) \;=\; \frac{x_d - \bar{x}}{s_x}")
-
     st.markdown(
-        "**Índice compuesto baseline** (signo negativo para que mayor = más subatendido):"
+        "**Normalización min-max a [0, 1]** (con log previo para las dimensiones "
+        "sesgadas *oferta* y *actividad*). Para una variable $X$ definimos:"
     )
     st.latex(
-        r"U^{\text{base}}_d \;=\; -\,\frac{z\bigl(\text{oferta}^{\text{base}}_d\bigr)"
-        r" \;+\; z\bigl(\text{actividad}_d\bigr)"
-        r" \;+\; z\bigl(\text{acceso}^{30}_d\bigr)}{3}"
+        r"\widetilde{X}_d \;=\; \frac{\ln(1 + X_d) - \min_d \ln(1 + X_d)}{\max_d \ln(1 + X_d) - \min_d \ln(1 + X_d)} \;\in\; [0, 1]"
+    )
+    st.markdown(
+        "Para *acceso*, que ya es una proporción en [0, 1], se usa directamente: "
+        r"$\widetilde{\text{acceso}}^{30}_d = \text{acceso}^{30}_d$."
     )
 
-    st.info(
-        "Interpretación: un distrito con oferta baja, actividad baja y acceso bajo "
-        "obtiene los tres z-scores negativos, que al invertirse se suman positivos "
-        "y elevan $U^{\\text{base}}_d$."
+    st.markdown("**Índice de cobertura baseline** (promedio simple de las 3 componentes normalizadas):")
+    st.latex(
+        r"I^{\text{base}}_d \;=\; \frac{\widetilde{\text{oferta}}^{\text{base}}_d"
+        r" \;+\; \widetilde{\text{actividad}}_d"
+        r" \;+\; \widetilde{\text{acceso}}^{30}_d}{3} \;\in\; [0, 1]"
+    )
+
+    st.success(
+        "**Lectura directa:** $I^{\\text{base}}_d = 0$ significa que el distrito "
+        "está en el **piso** simultáneamente en oferta, actividad y acceso "
+        "(peor atendido posible); $I^{\\text{base}}_d = 1$ requeriría que el distrito "
+        "fuera el **máximo observado** en las tres dimensiones a la vez (inalcanzable "
+        "en la práctica)."
     )
 
     st.divider()
@@ -382,11 +397,16 @@ Para un distrito $d$ (identificado por su UBIGEO), definimos:
         r"\text{acceso}^{15}_d \;=\; \frac{\bigl|\{\, c \in C_d \,:\, \text{dist}(c) \leq 15 \,\}\bigr|}{|C_d|}"
     )
 
-    st.markdown("**Índice compuesto alternativo:**")
+    st.markdown(
+        "**Normalización min-max a [0, 1]:** idéntica regla que en baseline "
+        "(log-transform para oferta y actividad; acceso ya en [0, 1])."
+    )
+
+    st.markdown("**Índice de cobertura alternativo:**")
     st.latex(
-        r"U^{\text{alt}}_d \;=\; -\,\frac{z\bigl(\text{oferta}^{\text{alt}}_d\bigr)"
-        r" \;+\; z\bigl(\text{actividad}_d\bigr)"
-        r" \;+\; z\bigl(\text{acceso}^{15}_d\bigr)}{3}"
+        r"I^{\text{alt}}_d \;=\; \frac{\widetilde{\text{oferta}}^{\text{alt}}_d"
+        r" \;+\; \widetilde{\text{actividad}}_d"
+        r" \;+\; \widetilde{\text{acceso}}^{15}_d}{3} \;\in\; [0, 1]"
     )
 
     st.divider()
@@ -395,21 +415,23 @@ Para un distrito $d$ (identificado por su UBIGEO), definimos:
         r"""
 | Dimensión | Baseline | Alternativa |
 | --- | --- | --- |
-| **Oferta** | emergencias por 100 km² | emergencias por centro poblado |
-| **Actividad** | ln(1 + atenciones) | ln(1 + atenciones) *(igual)* |
+| **Oferta** | $N^{\text{emerg}} / \text{área}$ (por 100 km²) | $N^{\text{emerg}} / |C|$ (por CP) |
+| **Actividad** | $\ln(1 + T)$ | $\ln(1 + T)$ *(igual)* |
 | **Acceso** | share de CPs con dist ≤ **30 km** | share de CPs con dist ≤ **15 km** |
-| **Fórmula del índice** | $U^{\text{base}} = -\tfrac{1}{3}(z_1 + z_2 + z_3)$ | $U^{\text{alt}} = -\tfrac{1}{3}(z'_1 + z_2 + z'_3)$ |
+| **Normalización** | min-max (con log para oferta y actividad) | idéntica |
+| **Fórmula del índice** | $I^{\text{base}} = \tfrac{1}{3}(\widetilde{x}_1 + \widetilde{x}_2 + \widetilde{x}_3)$ | $I^{\text{alt}} = \tfrac{1}{3}(\widetilde{x}'_1 + \widetilde{x}_2 + \widetilde{x}'_3)$ |
+| **Rango** | $[0, 1]$ | $[0, 1]$ |
         """
     )
 
     st.markdown("### 6.4 · Medida de sensibilidad")
     st.latex(
-        r"\rho_S \;=\; \text{Spearman}\bigl(\text{rank}(U^{\text{base}}),\;\text{rank}(U^{\text{alt}})\bigr) \;=\; 0{.}876"
+        r"\rho_S \;=\; \text{Spearman}\bigl(\text{rank}(I^{\text{base}}),\;\text{rank}(I^{\text{alt}})\bigr) \;=\; 0{.}891"
     )
     st.markdown(
         "La correlación es **alta pero no perfecta** — las conclusiones cualitativas "
-        "se mantienen (los distritos amazónicos y altoandinos siguen como los más "
-        "subatendidos), pero hay **reordenamientos** notables en el tramo medio del "
+        "se mantienen (los distritos amazónicos y altoandinos siguen como los peor "
+        "atendidos), pero hay **reordenamientos** notables en el tramo medio del "
         "ranking. La tabla completa de `rank_diff` por distrito está en "
         "`outputs/tables/sensitivity_ranking.csv` y en el tab *Exploración Interactiva*."
     )
@@ -462,9 +484,13 @@ usar los resultados para política pública:
   urbanos), hay sesgo en la densidad distrital.
 - **Cobertura de centros poblados.** INEI registra los CPs censados; asentamientos
   informales recientes o caseríos dispersos no aparecen.
-- **Índice compuesto = promedio simple de z-scores.** No hay justificación para
-  pesos iguales más allá de simplicidad. Pesos distintos (por ejemplo, más peso al
-  acceso) cambiarían el ranking.
+- **Índice compuesto = promedio simple de 3 componentes en [0, 1].** No hay
+  justificación técnica para pesos iguales más allá de simplicidad. Pesos
+  distintos (por ejemplo, más peso al acceso) cambiarían el ranking.
+- **Normalización min-max dependiente de la muestra.** El máximo observado entre
+  los 1 873 distritos define el "1" de la escala. Incorporar o excluir distritos
+  (por ejemplo, si aparecieran datos mejorados de Lima) podría mover el 1 para
+  todos. Una alternativa sería usar "goalposts" teóricos fijos como en el HDI de PNUD.
 - **Un solo año (2024).** No capturamos tendencias ni shocks temporales
   (post-pandemia, feriados, eventos climáticos).
         """
@@ -488,7 +514,7 @@ usar los resultados para política pública:
     c5.metric("Atenciones 2024 (M)", f"{int(ipress['atenciones'].sum()) / 1e6:.1f}")
     c6.metric("Centros poblados", "136,587")
     c7.metric("Mediana dist. CP→emergencia", "22.8 km")
-    c8.metric("Spearman(baseline, alt)", "0.876",
+    c8.metric("Spearman(baseline, alt)", "0.891",
               help="Correlación de rangos entre los índices baseline y alternativo — mide sensibilidad")
 
 
@@ -546,21 +572,23 @@ priorizando comprensibilidad sobre sofisticación:
     st.divider()
 
     # --- Gráfico 1 --------------------------------------------------------
-    st.markdown("### Gráfico 1 · Extremos del ranking de subatención")
-    img1 = FIGURES / "01_top_bottom_underservice.png"
+    st.markdown("### Gráfico 1 · Extremos del ranking de cobertura")
+    img1 = FIGURES / "01_top_bottom_coverage.png"
     if img1.exists():
         st.image(str(img1), width="stretch")
     st.markdown(
         """
-**Análisis:** los 20 distritos más subatendidos (barras rojas) se concentran en la
-**Amazonía** (Puerto Inca y Honoria en Huánuco; Irazola y Curimaná en Ucayali) y la
-**sierra fronteriza sur** (Tarata, Estique, Palca en Tacna). Todos comparten un
-"piso" de índice ≈ 0.75 porque simultáneamente tienen oferta, actividad y acceso
-en **cero** — sus tres z-scores caen al mismo valor mínimo. Los 20 mejor atendidos
-son esencialmente **Lima Metropolitana y Callao** (Jesús María, Bellavista,
-Miraflores, Lince), con capitales departamentales colándose (Arequipa cercado,
-Wanchaq en Cusco). La brecha supera los **9 desvíos estándar** entre extremos —
-una desigualdad estructural que una sola media nacional esconde por completo.
+**Análisis:** los 20 distritos **peor atendidos** (barras rojas, cobertura ≈ 0) están
+concentrados en provincias como **Ayabaca (Piura)**, **Chucuito (Puno)**, **Huamalíes
+(Huánuco)**, **Huaytará (Huancavelica)** y **Atalaya (Ucayali)** — geografía
+amazónica y altoandina donde la cobertura es **cero en oferta, actividad y acceso
+simultáneamente**. El desempate se hizo por número de CPs (distritos con más CPs
+pesan primero). Los 20 **mejor atendidos** (barras verdes, cobertura ≈ 0.87-0.97)
+son esencialmente **Lima Metropolitana y Callao** (Jesús María **0.97**, Bellavista
+**0.96**, Miraflores **0.90**), con capitales departamentales colándose (Arequipa
+cercado **0.95**, Wanchaq-Cusco **0.87**). Ninguna alcanza el 1 perfecto: nadie es
+simultáneamente el #1 en las tres dimensiones. La brecha entre extremos es
+**prácticamente el ancho completo de la escala** [0, 1].
         """
     )
     st.divider()
@@ -594,11 +622,11 @@ del índice compuesto — un conteo simple de establecimientos sobreestima la co
 **Análisis:** las correlaciones más fuertes son **estructurales**, no informativas:
 *share 30 km* con *share 15 km* (ρ ≈ 0.95, mismo indicador con distinto umbral)
 y *n establecimientos* con *n de emergencia activa* (ρ ≈ 0.77). Más revelador:
-el **índice de subatención baseline** correlaciona negativamente con oferta y
-acceso (sus componentes por construcción), pero la magnitud **no es ±1**, lo
-que confirma que el promedio de z-scores **no está dominado por una sola
-dimensión** — las tres piezas aportan información distinta. La correlación del
-índice baseline con el alternativo (≈ 0.88) anticipa el resultado del gráfico 6.
+el **índice de cobertura baseline** correlaciona **positivamente** con oferta,
+actividad y acceso (sus componentes por construcción), pero la magnitud **no es
++1**, lo que confirma que el promedio **no está dominado por una sola dimensión**
+— las tres piezas aportan información distinta. La correlación del índice
+baseline con el alternativo (≈ 0.89) anticipa el resultado del gráfico 6.
         """
     )
     st.divider()
@@ -623,20 +651,21 @@ ese gap es la fuente principal de la sensibilidad reportada en el gráfico 6.
     st.divider()
 
     # --- Gráfico 5 --------------------------------------------------------
-    st.markdown("### Gráfico 5 · Subatención por departamento")
-    img5 = FIGURES / "05_underservice_by_departamento.png"
+    st.markdown("### Gráfico 5 · Cobertura por departamento")
+    img5 = FIGURES / "05_coverage_by_departamento.png"
     if img5.exists():
         st.image(str(img5), width="stretch")
     st.markdown(
         """
 **Análisis:** **Lima y Callao** son los únicos departamentos con mediana
-claramente **negativa** (bien atendidos). Los peores medianos son amazónicos
-(**Amazonas, Loreto, Ucayali, Madre de Dios**) y altoandinos (**Apurímac,
-Huancavelica**). El hallazgo más importante es la **alta varianza intra-
-departamental**: cada departamento tiene distritos buenos y malos, con rangos
-intercuartílicos que se superponen fuertemente. La desigualdad **no es un
-fenómeno puramente regional** — implicando que las intervenciones de política
-deben operarse a **nivel distrital**, no por bloques departamentales.
+claramente **superior** a la mediana nacional (mejor atendidos). Los peores
+medianos son amazónicos (**Amazonas, Loreto, Ucayali, Madre de Dios**) y
+altoandinos (**Apurímac, Huancavelica**). El hallazgo más importante es la
+**alta varianza intra-departamental**: cada departamento tiene distritos buenos
+y malos, con rangos intercuartílicos que se superponen fuertemente. La
+desigualdad **no es un fenómeno puramente regional** — implicando que las
+intervenciones de política deben operarse a **nivel distrital**, no por bloques
+departamentales.
         """
     )
     st.divider()
@@ -649,7 +678,7 @@ deben operarse a **nivel distrital**, no por bloques departamentales.
     st.markdown(
         """
 **Análisis:** la nube se pega a la línea **y = x**, reflejando la alta correlación
-de Spearman (ρ = 0.876). Los puntos **alejados de la recta** son los distritos
+de Spearman (ρ = 0.891). Los puntos **alejados de la recta** son los distritos
 cuyo ranking **cambia materialmente al modificar la definición de acceso** — son
 los *movers*. Los puntos **sobre la recta** son robustos: están mal (o bien)
 parados bajo ambas especificaciones, y deben ser el foco de priorización con
@@ -714,9 +743,9 @@ with tab_explore:
         dpto = st.selectbox("Departamento", ["(todos)"] + dpto_options)
     with col3:
         metric_col = (
-            "underservice_index_baseline" if spec == "Baseline" else "underservice_index_alt"
+            "coverage_index_baseline" if spec == "Baseline" else "coverage_index_alt"
         )
-        top_n = st.slider("Top N a resaltar", 5, 50, 10)
+        top_n = st.slider("Top N a resaltar (peor atendidos)", 5, 50, 10)
 
     view = metrics.copy() if dpto == "(todos)" else metrics[metrics["departamento"] == dpto]
 
@@ -730,7 +759,7 @@ with tab_explore:
     st.divider()
 
     # Mini-mapa folium filtrado
-    st.subheader(f"Mapa — subatención {spec.lower()}")
+    st.subheader(f"Mapa — cobertura {spec.lower()} (rojo = peor, verde = mejor)")
     view_wgs = view.to_crs("EPSG:4326").dropna(subset=[metric_col])
     if len(view_wgs) > 0:
         bounds = view_wgs.total_bounds  # minx, miny, maxx, maxy
@@ -738,14 +767,17 @@ with tab_explore:
         fm = folium.Map(location=center, zoom_start=7 if dpto != "(todos)" else 5,
                         tiles="CartoDB positron")
 
-        vmin = float(view_wgs[metric_col].min())
-        vmax = float(view_wgs[metric_col].max())
-        cmap = LinearColormap(["#2ca25f", "#ffffbf", "#c0392b"], vmin=vmin, vmax=vmax,
-                              caption=metric_col)
+        # Escala [0, 1]: rojo = peor, verde = mejor
+        cmap = LinearColormap(["#c0392b", "#ffffbf", "#27ae60"], vmin=0.0, vmax=1.0,
+                              caption="Índice de cobertura [0, 1]")
         cmap.add_to(fm)
 
-        # Resaltar top-N más subatendidos
-        top_ubigeos = set(view_wgs.nlargest(top_n, metric_col)["ubigeo"].tolist())
+        # Resaltar top-N peor atendidos (= menor cobertura)
+        top_ubigeos = set(
+            view_wgs.sort_values([metric_col, "n_ccpp"], ascending=[True, False])
+            .head(top_n)["ubigeo"]
+            .tolist()
+        )
 
         def style_fn(feat):
             v = feat["properties"].get(metric_col)
@@ -765,8 +797,8 @@ with tab_explore:
             tooltip=folium.GeoJsonTooltip(
                 fields=["distrito", "provincia", "departamento", metric_col,
                         "n_facilities", "n_emergency_facilities", "share_cp_within_30km"],
-                aliases=["Distrito:", "Provincia:", "Dpto:", "Score:", "IPRESS:",
-                         "Emergencia:", "Acceso 30km:"],
+                aliases=["Distrito:", "Provincia:", "Dpto:", "Cobertura [0-1]:",
+                         "IPRESS:", "Emergencia:", "Acceso 30km:"],
                 localize=True,
             ),
         ).add_to(fm)
@@ -776,14 +808,19 @@ with tab_explore:
         st.info("No hay distritos con score en esta vista.")
 
     st.divider()
-    st.subheader(f"Top {top_n} distritos más subatendidos — {spec}")
+    st.subheader(f"Top {top_n} distritos peor atendidos — {spec}")
+    st.caption(
+        "Ordenados por menor cobertura; empates resueltos priorizando distritos con "
+        "más centros poblados afectados."
+    )
     cols_show = ["departamento", "provincia", "distrito", metric_col,
                  "n_facilities", "n_emergency_facilities", "total_atenciones",
-                 "share_cp_within_30km", "mean_dist_km"]
+                 "share_cp_within_30km", "mean_dist_km", "n_ccpp"]
     cols_show = [c for c in cols_show if c in view.columns]
     top_df = (
         view.dropna(subset=[metric_col])
-        .nlargest(top_n, metric_col)[cols_show]
+        .sort_values([metric_col, "n_ccpp"], ascending=[True, False])
+        .head(top_n)[cols_show]
         .reset_index(drop=True)
     )
     st.dataframe(top_df, use_container_width=True, hide_index=True)
