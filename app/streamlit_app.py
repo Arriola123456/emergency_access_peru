@@ -26,7 +26,6 @@ import pandas as pd
 import seaborn as sns
 import streamlit as st
 from branca.colormap import LinearColormap
-from streamlit_folium import st_folium
 
 from src.config import DATA_PROCESSED, FIGURES, MAPS
 
@@ -59,6 +58,83 @@ def load_ccpp() -> gpd.GeoDataFrame:
 @st.cache_data
 def load_sensitivity() -> pd.DataFrame:
     return pd.read_csv(ROOT / "outputs" / "tables" / "sensitivity_ranking.csv")
+
+
+@st.cache_data(show_spinner="Construyendo mapa interactivo...")
+def build_interactive_map_html(dpto: str, spec: str, top_n: int) -> str | None:
+    """Construye el mapa folium filtrado y devuelve su HTML ya renderizado.
+
+    Se cachea por combinación (dpto, spec, top_n) — un cambio en los filtros
+    se computa una sola vez. Simplifica geometrías para evitar el freeze de
+    st_folium con los 1 873 polígonos completos.
+    """
+    metric_col = (
+        "coverage_index_baseline" if spec == "Baseline" else "coverage_index_alt"
+    )
+    metrics = load_metrics()
+    view = metrics if dpto == "(todos)" else metrics[metrics["departamento"] == dpto]
+    view_wgs = view.to_crs("EPSG:4326").dropna(subset=[metric_col]).copy()
+
+    if len(view_wgs) == 0:
+        return None
+
+    # Simplificación ~500 m — suficiente para un mapa regional sin perder silueta
+    view_wgs["geometry"] = view_wgs["geometry"].simplify(0.005, preserve_topology=True)
+
+    bounds = view_wgs.total_bounds
+    center = [(bounds[1] + bounds[3]) / 2, (bounds[0] + bounds[2]) / 2]
+    fm = folium.Map(
+        location=center,
+        zoom_start=7 if dpto != "(todos)" else 5,
+        tiles="CartoDB positron",
+        prefer_canvas=True,
+    )
+
+    cmap = LinearColormap(
+        ["#c0392b", "#ffffbf", "#27ae60"],
+        vmin=0.0,
+        vmax=1.0,
+        caption=f"Índice de cobertura [0, 1] — {spec.lower()}",
+    )
+    cmap.add_to(fm)
+
+    top_ubigeos = set(
+        view_wgs.sort_values([metric_col, "n_ccpp"], ascending=[True, False])
+        .head(top_n)["ubigeo"]
+        .tolist()
+    )
+
+    def style_fn(feat):
+        v = feat["properties"].get(metric_col)
+        is_top = feat["properties"]["ubigeo"] in top_ubigeos
+        return {
+            "fillColor": cmap(v) if v is not None else "#cccccc",
+            "color": "#000000" if is_top else "#888888",
+            "weight": 2.0 if is_top else 0.4,
+            "fillOpacity": 0.75,
+        }
+
+    folium.GeoJson(
+        data=view_wgs[[
+            "ubigeo", "distrito", "provincia", "departamento",
+            metric_col, "n_facilities", "n_emergency_facilities",
+            "share_cp_within_30km", "geometry",
+        ]].to_json(),
+        style_function=style_fn,
+        tooltip=folium.GeoJsonTooltip(
+            fields=[
+                "distrito", "provincia", "departamento", metric_col,
+                "n_facilities", "n_emergency_facilities", "share_cp_within_30km",
+            ],
+            aliases=[
+                "Distrito:", "Provincia:", "Dpto:", "Cobertura [0-1]:",
+                "IPRESS:", "Emergencia:", "Acceso 30km:",
+            ],
+            localize=True,
+        ),
+    ).add_to(fm)
+
+    return fm.get_root().render()
 
 
 # ------------------------------------------------------------------- Sidebar --
@@ -775,54 +851,18 @@ with tab_explore:
 
     st.divider()
 
-    # Mini-mapa folium filtrado
+    # Mapa folium filtrado (cacheado + HTML directo para evitar freeze de st_folium)
     st.subheader(f"Mapa — cobertura {spec.lower()} (rojo = peor, verde = mejor)")
-    view_wgs = view.to_crs("EPSG:4326").dropna(subset=[metric_col])
-    if len(view_wgs) > 0:
-        bounds = view_wgs.total_bounds  # minx, miny, maxx, maxy
-        center = [(bounds[1] + bounds[3]) / 2, (bounds[0] + bounds[2]) / 2]
-        fm = folium.Map(location=center, zoom_start=7 if dpto != "(todos)" else 5,
-                        tiles="CartoDB positron")
-
-        # Escala [0, 1]: rojo = peor, verde = mejor
-        cmap = LinearColormap(["#c0392b", "#ffffbf", "#27ae60"], vmin=0.0, vmax=1.0,
-                              caption="Índice de cobertura [0, 1]")
-        cmap.add_to(fm)
-
-        # Resaltar top-N peor atendidos (= menor cobertura)
-        top_ubigeos = set(
-            view_wgs.sort_values([metric_col, "n_ccpp"], ascending=[True, False])
-            .head(top_n)["ubigeo"]
-            .tolist()
-        )
-
-        def style_fn(feat):
-            v = feat["properties"].get(metric_col)
-            is_top = feat["properties"]["ubigeo"] in top_ubigeos
-            return {
-                "fillColor": cmap(v) if v is not None else "#cccccc",
-                "color": "#000000" if is_top else "#888888",
-                "weight": 2.0 if is_top else 0.4,
-                "fillOpacity": 0.75,
-            }
-
-        folium.GeoJson(
-            data=view_wgs[["ubigeo", "distrito", "provincia", "departamento",
-                           metric_col, "n_facilities", "n_emergency_facilities",
-                           "share_cp_within_30km", "geometry"]].to_json(),
-            style_function=style_fn,
-            tooltip=folium.GeoJsonTooltip(
-                fields=["distrito", "provincia", "departamento", metric_col,
-                        "n_facilities", "n_emergency_facilities", "share_cp_within_30km"],
-                aliases=["Distrito:", "Provincia:", "Dpto:", "Cobertura [0-1]:",
-                         "IPRESS:", "Emergencia:", "Acceso 30km:"],
-                localize=True,
-            ),
-        ).add_to(fm)
-
-        st_folium(fm, use_container_width=True, height=550, returned_objects=[])
-    else:
+    st.caption(
+        "Geometrías simplificadas a ~500 m y cacheadas por combinación de "
+        "filtros. El primer render por vista dura 1–3 s; los siguientes son "
+        "instantáneos."
+    )
+    map_html = build_interactive_map_html(dpto, spec, top_n)
+    if map_html is None:
         st.info("No hay distritos con score en esta vista.")
+    else:
+        st.components.v1.html(map_html, height=560, scrolling=False)
 
     st.divider()
     st.subheader(f"Top {top_n} distritos peor atendidos — {spec}")
