@@ -611,8 +611,8 @@ with tab_static:
 | # | Gráfico | Pregunta que aborda | Qué se decide al verlo |
 | --- | --- | --- | --- |
 | 1 | **Distribución del índice de cobertura** (histogramas superpuestos) | Q3, Q4 | Ver la estructura completa del indicador (incluyendo los pileups estructurales en 0 y 1/3) y comparar baseline vs alternativa directamente. |
-| 2 | **Oferta vs actividad** (scatter log-log) | Q1 | Separar establecimientos *formalmente existentes* de los que realmente atienden emergencias. |
-| 3 | **Matriz de correlación Spearman** | Q3 | Validar que las 3 dimensiones del índice no son redundantes entre sí. |
+| 2 | **Ranking de peor acceso espacial** (top 25 distritos) | Q2 | Identificar por nombre a los distritos donde los centros poblados tienen que viajar más para llegar a una emergencia. |
+| 3 | **Descomposición del índice** (stacked bars top 15 / bottom 15) | Q3 | Ver para distritos específicos qué dimensiones (oferta / actividad / acceso) están fallando o funcionando. |
 | 4 | **Distribución de distancias CP → emergencia** | Q2 | Ver qué fracción de centros poblados queda bajo los umbrales de 15 km y 30 km. |
 | 5 | **Boxplot por departamento** | Q1, Q3 | Explorar si la desigualdad es fenómeno departamental o distrital. |
 | 6 | **Baseline vs alternativa** (scatter) | Q4 | Localizar qué distritos son *sensibles* al cambio de definición. |
@@ -630,12 +630,17 @@ priorizando comprensibilidad sobre sofisticación:
   piso del índice. El histograma expone la **distribución completa**, hace
   visibles los **pileups estructurales** (documentados en la decisión D12)
   y permite comparar baseline vs alternativa en una sola vista.
-- **Scatter log-log (2)** en vez de una regresión lineal: la distribución de
-  atenciones está severamente sesgada (megahospital de Lima vs posta amazónica).
-  El log-log estabiliza la varianza y expone outliers sin distorsionar la relación.
-- **Heatmap Spearman (3)** en vez de *scatter matrix*: con 10 variables, un
-  *scatter matrix* tiene 45 paneles inmanejables. Spearman (no Pearson) es
-  robusto a no-linealidades y resume todo en una grilla.
+- **Ranking barplot (2)** en vez de un scatter bivariado: Pregunta 2 pide
+  identificar *qué distritos* tienen peor acceso, no una relación general. Un
+  barplot con los 25 peores y nombres visibles responde esa pregunta en un
+  vistazo; el color secundario (share de CPs ≤ 30 km) agrega una 2.ª métrica
+  sin perder legibilidad.
+- **Stacked decomposition (3)** en vez de una matriz de correlación Spearman:
+  Pregunta 3 pregunta por la *combinación* de 3 dimensiones, no por sus
+  correlaciones agregadas. El stacked barplot muestra para cada distrito del
+  top/bottom cuánto aporta oferta, actividad y acceso al índice final — se ve
+  inmediatamente que los peor atendidos fallan en las 3 dimensiones a la vez
+  y los mejor atendidos son los que logran aportes altos en los 3 bloques.
 - **Histograma con umbrales (4)** en vez de boxplot: conserva la **forma** de la
   distribución y permite ver visualmente qué porcentaje cae bajo cada umbral —
   información que un boxplot oculta.
@@ -687,39 +692,58 @@ La **cola derecha** (cobertura alta) son los distritos con oferta y actividad pr
     st.divider()
 
     # --- Gráfico 2 --------------------------------------------------------
-    st.markdown("### Gráfico 2 · Oferta vs actividad de emergencias")
-    img2 = FIGURES / "02_scatter_facilities_vs_atenciones.png"
+    st.markdown("### Gráfico 2 · Ranking de peor acceso espacial (Pregunta 2)")
+    img2 = FIGURES / "02_access_ranking.png"
     if img2.exists():
         st.image(str(img2), width="stretch")
     st.markdown(
         """
-**Análisis:** existe una relación positiva en escala log-log (más establecimientos →
-más atenciones), pero con dos fenómenos interesantes. Los **outliers hacia arriba**
-son los megahospitales limeños que concentran **millones** de atenciones en pocos
-IPRESS (ver anotaciones). La banda de puntos en el **piso (atenciones ≈ 0)** revela
-el problema central: muchos distritos tienen IPRESS *formalmente existentes* pero
-**sin actividad de emergencia reportada a SUSALUD**. Este "fantasma administrativo"
-es exactamente lo que motiva separar oferta y actividad como dimensiones independientes
-del índice compuesto — un conteo simple de establecimientos sobreestima la cobertura.
+**Análisis — respuesta directa a Q2:** las 25 barras muestran **por nombre** los
+distritos donde los centros poblados tienen que viajar más para llegar a un IPRESS
+de emergencia. Todos superan ampliamente el umbral baseline de 30 km (línea negra
+punteada) y muchos superan los 100 km — son geografías **amazónicas de frontera**
+(Ucayali, Loreto, Madre de Dios) donde los CPs pueden estar a varios días por río
+del establecimiento más cercano.
+
+El **color** de cada barra codifica una segunda dimensión: el share de centros
+poblados dentro de los 30 km. Las barras **rojas intensas** son los casos más
+graves — distritos donde **ni siquiera una fracción** de los CPs cae bajo el
+umbral. Las barras con tonos más amarillos tienen parte de sus CPs cubiertos
+(generalmente los cercanos a la capital distrital) mientras el resto queda fuera.
+
+Este gráfico responde Q2 sin ambigüedad: *"qué distritos tienen peor acceso
+espacial"* es una lista concreta con magnitudes en km, ordenada por severidad
+y cruzada con la cobertura efectiva bajo umbral.
         """
     )
     st.divider()
 
     # --- Gráfico 3 --------------------------------------------------------
-    st.markdown("### Gráfico 3 · Matriz de correlación Spearman")
-    img3 = FIGURES / "03_correlation_heatmap.png"
+    st.markdown("### Gráfico 3 · Descomposición del índice (Pregunta 3)")
+    img3 = FIGURES / "03_coverage_decomposition.png"
     if img3.exists():
         st.image(str(img3), width="stretch")
     st.markdown(
         """
-**Análisis:** las correlaciones más fuertes son **estructurales**, no informativas:
-*share 30 km* con *share 15 km* (ρ ≈ 0.95, mismo indicador con distinto umbral)
-y *n establecimientos* con *n de emergencia activa* (ρ ≈ 0.77). Más revelador:
-el **índice de cobertura baseline** correlaciona **positivamente** con oferta,
-actividad y acceso (sus componentes por construcción), pero la magnitud **no es
-+1**, lo que confirma que el promedio **no está dominado por una sola dimensión**
-— las tres piezas aportan información distinta. La correlación del índice
-baseline con el alternativo (≈ 0.89) anticipa el resultado del gráfico 6.
+**Análisis — respuesta directa a Q3:** el gráfico descompone el índice de cobertura
+en sus tres ingredientes. **Cada dimensión aporta hasta 1/3** al índice total: azul
+= oferta, naranja = actividad, verde = acceso. Los 15 peor atendidos (parte inferior,
+bajo la línea punteada) tienen barras **casi vacías o solo con el bloque verde** —
+es decir, su único aporte al índice viene del acceso vecinal; oferta y actividad
+locales son **cero**. No fallan en una dimensión; **fallan en dos o tres
+simultáneamente**.
+
+Los 15 mejor atendidos (parte superior) muestran el patrón opuesto: los tres
+bloques están presentes y cerca de su máximo individual de 1/3. Jesús María,
+Bellavista, Arequipa y Lima cercado se acercan a 1.0 porque tienen densidad
+alta de emergencia (azul casi al tope), actividad alta (naranja casi al tope) y
+**acceso perfecto** (verde en 1/3). Nadie alcanza el 1 teórico — ningún distrito
+es el máximo simultáneo en las tres dimensiones.
+
+Este gráfico responde Q3 con evidencia visual específica: los distritos
+subatendidos no sufren una deficiencia aislada, sufren un **déficit estructural
+combinado**, y los mejor atendidos son los que **aciertan en las tres dimensiones
+a la vez**.
         """
     )
     st.divider()
