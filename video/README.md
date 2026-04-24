@@ -2,7 +2,9 @@
 
 Video de presentación del proyecto, máximo 4 minutos.
 
-**Link:** _[pendiente — se agregará al finalizar la grabación]_
+**Link:** _[pendiente — pega aquí el URL de YouTube/Drive al terminar la grabación]_
+
+> Para que el video quede visible al profesor, basta editar este archivo y reemplazar la línea anterior por `**Link:** <url>`, luego commit + push.
 
 ## Contenido esperado
 

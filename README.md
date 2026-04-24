@@ -86,6 +86,16 @@ python -m src.viz_geospatial
 streamlit run app/streamlit_app.py
 ```
 
+## Resultados clave
+
+- **1,873** distritos analizados · **7,951** IPRESS con coordenadas válidas · **787** con actividad de emergencia en 2024.
+- **78 %** de los distritos (1,457 / 1,873) **no cuentan** con ningún IPRESS que haya reportado actividad de emergencia en 2024.
+- **Total de atenciones 2024:** ≈ 15.8 millones.
+- **Distancia mediana** desde un centro poblado al IPRESS de emergencia más cercano: **22.8 km**; máxima: 377 km (Amazonía).
+- **Top distritos más subatendidos (baseline):** Tarata, Puerto Inca, Padre Abad (Amazonía y puna rural — cero oferta, cero acceso).
+- **Mejor atendidos:** Jesús María, Bellavista, Lince, Miraflores, Pueblo Libre (Lima metropolitana y Callao).
+- **Sensibilidad al cambio de especificación:** Spearman ρ = **0.876** entre el ranking baseline (umbral 30 km, densidad por km²) y la alternativa (umbral 15 km, oferta por centro poblado). La conclusión cualitativa se mantiene, pero hay reordenamientos notables en el tramo medio del ranking.
+
 ## Video explicativo
 
 Ver `video/README.md` para el link (≤4 min).
