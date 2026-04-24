@@ -57,66 +57,86 @@ def _save(fig: plt.Figure, name: str) -> None:
     log.info(f"wrote {out.name}")
 
 
-# --- Gráfico 1 · Extremos del ranking ------------------------------------------
+# --- Gráfico 1 · Distribución del índice de cobertura --------------------------
 
-def plot_top_bottom_coverage(metrics: gpd.GeoDataFrame, n: int = 20) -> None:
-    df = metrics.dropna(subset=["coverage_index_baseline"]).copy()
-    df["label"] = (
-        df["distrito"].str.title() + " (" + df["departamento"].str[:4].str.title() + ")"
+def plot_coverage_distributions(metrics: gpd.GeoDataFrame) -> None:
+    """Histogramas superpuestos: distribución del índice en baseline y alternativa.
+
+    Muestra la estructura bimodal del índice — con pileups en x = 0 (distritos
+    aislados totales) y x = 1/3 (distritos sin emergencia propia pero con acceso
+    vecinal). La superposición permite comparar sensibilidad entre especificaciones.
+    """
+    df = metrics.copy()
+    vals_b = df["coverage_index_baseline"].dropna()
+    vals_a = df["coverage_index_alt"].dropna()
+
+    bins = np.linspace(0, 1, 41)  # 40 bins de ancho 0.025
+    counts_b, _ = np.histogram(vals_b, bins=bins)
+    counts_a, _ = np.histogram(vals_a, bins=bins)
+    peak = max(counts_b.max(), counts_a.max())
+
+    fig, ax = plt.subplots(figsize=(11, 6.5))
+    ax.hist(
+        vals_b,
+        bins=bins,
+        color="#2980b9",
+        alpha=0.55,
+        label=f"Baseline · 30 km · oferta por km² (n = {len(vals_b):,})",
+        edgecolor="white",
+        linewidth=0.5,
+    )
+    ax.hist(
+        vals_a,
+        bins=bins,
+        color="#c0392b",
+        alpha=0.50,
+        label=f"Alternativa · 15 km · oferta por CP (n = {len(vals_a):,})",
+        edgecolor="white",
+        linewidth=0.5,
     )
 
-    # Worst: rompemos empates (muchos en 0) priorizando distritos con más CPs afectados
-    worst = (
-        df.sort_values(["coverage_index_baseline", "n_ccpp"], ascending=[True, False])
-        .head(n)
-        .copy()
-    )
-    worst["grupo"] = f"{n} peor atendidos"
-    best = df.nlargest(n, "coverage_index_baseline").copy()
-    best["grupo"] = f"{n} mejor atendidos"
+    # Líneas de referencia en los pileups estructurales
+    ax.axvline(0.0, color="#2c3e50", linestyle=":", linewidth=1.1, alpha=0.65)
+    ax.axvline(1 / 3, color="#2c3e50", linestyle=":", linewidth=1.1, alpha=0.65)
 
-    plot_df = pd.concat([worst, best], ignore_index=True).sort_values(
-        "coverage_index_baseline", ascending=True
+    y_text = peak * 0.85
+    ax.annotate(
+        "x = 0\n(piso — sin emergencia\nni acceso)",
+        xy=(0.01, peak * 0.55),
+        xytext=(0.11, y_text),
+        arrowprops=dict(arrowstyle="-", color="#2c3e50", alpha=0.5, linewidth=0.8),
+        fontsize=9,
+        ha="left",
+        va="top",
+        color="#2c3e50",
+    )
+    ax.annotate(
+        "x = 1/3 ≈ 0.333\n(sin emergencia propia\npero con acceso vecinal)",
+        xy=(1 / 3 + 0.003, peak * 0.55),
+        xytext=(0.44, y_text),
+        arrowprops=dict(arrowstyle="-", color="#2c3e50", alpha=0.5, linewidth=0.8),
+        fontsize=9,
+        ha="left",
+        va="top",
+        color="#2c3e50",
     )
 
-    palette = {f"{n} peor atendidos": "#c0392b", f"{n} mejor atendidos": "#27ae60"}
-
-    fig, ax = plt.subplots(figsize=(11, 11))
-    sns.barplot(
-        data=plot_df,
-        y="label",
-        x="coverage_index_baseline",
-        hue="grupo",
-        palette=palette,
-        dodge=False,
-        ax=ax,
-    )
-    median = df["coverage_index_baseline"].median()
-    ax.axvline(
-        median, color="black", linestyle="--", linewidth=0.8, alpha=0.6,
-        label=f"Mediana nacional ({median:.2f})",
-    )
     ax.set_xlim(0, 1)
+    ax.set_ylim(0, peak * 1.18)
     ax.set_xlabel(
-        "Índice de cobertura de emergencia (0 = peor atendido · 1 = mejor atendido)",
+        "Índice de cobertura de emergencia [0 = peor atendido · 1 = mejor atendido]",
         fontsize=11,
     )
-    ax.set_ylabel("Distrito (departamento abreviado)", fontsize=11)
+    ax.set_ylabel("Número de distritos", fontsize=11)
     ax.set_title(
-        f"Extremos del ranking de cobertura — {n} peor y {n} mejor atendidos",
-        fontsize=13,
-        pad=14,
+        "Distribución del índice de cobertura en los 1 873 distritos\n"
+        "Dos especificaciones superpuestas — baseline (azul) vs alternativa (rojo)",
+        fontsize=12,
+        pad=12,
     )
-    ax.legend(
-        title="",
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.07),
-        ncol=3,
-        frameon=False,
-        fontsize=10,
-    )
+    ax.legend(loc="upper right", frameon=True, fontsize=10)
     fig.tight_layout()
-    _save(fig, "01_top_bottom_coverage.png")
+    _save(fig, "01_coverage_distribution.png")
 
 
 # --- Gráfico 2 · Scatter oferta vs actividad ----------------------------------
@@ -366,7 +386,7 @@ def main() -> None:
     metrics = gpd.read_parquet(DATA_PROCESSED / "district_metrics.parquet")
     ccpp = gpd.read_parquet(DATA_PROCESSED / "ccpp_with_distance.parquet")
 
-    plot_top_bottom_coverage(metrics, n=20)
+    plot_coverage_distributions(metrics)
     plot_scatter_facilities_vs_atenciones(metrics)
     plot_correlation_heatmap(metrics)
     plot_distance_histogram(ccpp)
