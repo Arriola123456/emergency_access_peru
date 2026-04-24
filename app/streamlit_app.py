@@ -492,20 +492,181 @@ usar los resultados para política pública:
               help="Correlación de rangos entre los índices baseline y alternativo — mide sensibilidad")
 
 
-# --------------------------------------------------- Tab 2: Static Analysis ---
+# ─────────────────────────────────────────── Tab 2: Análisis Estático ───
 
 with tab_static:
-    st.header("Análisis estático")
-    figs = sorted(FIGURES.glob("*.png"))
-    if not figs:
-        st.warning("No hay figuras generadas. Ejecuta `python -m src.viz_static`.")
-    else:
-        for p in figs:
-            st.markdown(f"#### {p.stem.replace('_', ' ').title()}")
-            st.image(str(p), use_column_width=True)
+    st.header("Análisis Estático")
+    st.caption(
+        "Seis visualizaciones que, en conjunto, responden a las cuatro preguntas "
+        "de investigación mediante cortes complementarios del mismo dataset."
+    )
+
+    # --- Índice de gráficos -----------------------------------------------
+    st.markdown("## Índice de visualizaciones")
+    st.markdown(
+        """
+| # | Gráfico | Pregunta que aborda | Qué se decide al verlo |
+| --- | --- | --- | --- |
+| 1 | **Extremos del ranking** (top 20 / bottom 20) | Q1, Q3 | Identificar distritos prioritarios y mejor cubiertos en una sola vista comparable. |
+| 2 | **Oferta vs actividad** (scatter log-log) | Q1 | Separar establecimientos *formalmente existentes* de los que realmente atienden emergencias. |
+| 3 | **Matriz de correlación Spearman** | Q3 | Validar que las 3 dimensiones del índice no son redundantes entre sí. |
+| 4 | **Distribución de distancias CP → emergencia** | Q2 | Ver qué fracción de centros poblados queda bajo los umbrales de 15 km y 30 km. |
+| 5 | **Boxplot por departamento** | Q1, Q3 | Explorar si la desigualdad es fenómeno departamental o distrital. |
+| 6 | **Baseline vs alternativa** (scatter) | Q4 | Localizar qué distritos son *sensibles* al cambio de definición. |
+        """
+    )
+
+    with st.expander("¿Por qué estos 6 gráficos y no otros? — justificación técnica"):
+        st.markdown(
+            """
+La elección apunta a **cubrir las 4 preguntas con el menor número de vistas**,
+priorizando comprensibilidad sobre sofisticación:
+
+- **Diverging barplot (1)** en vez de un barplot con los 1 873 distritos: un
+  gráfico ilegible no genera decisiones. Destacar los extremos es suficiente
+  para priorización política.
+- **Scatter log-log (2)** en vez de una regresión lineal: la distribución de
+  atenciones está severamente sesgada (megahospital de Lima vs posta amazónica).
+  El log-log estabiliza la varianza y expone outliers sin distorsionar la relación.
+- **Heatmap Spearman (3)** en vez de *scatter matrix*: con 10 variables, un
+  *scatter matrix* tiene 45 paneles inmanejables. Spearman (no Pearson) es
+  robusto a no-linealidades y resume todo en una grilla.
+- **Histograma con umbrales (4)** en vez de boxplot: conserva la **forma** de la
+  distribución y permite ver visualmente qué porcentaje cae bajo cada umbral —
+  información que un boxplot oculta.
+- **Boxplot + strip (5)** en vez de violinplot: el violinplot es más informativo
+  pero menos legible con 25 categorías. El strip superpuesto muestra puntos
+  individuales, rescatando parte de esa densidad.
+- **Scatter de sensibilidad (6)** en vez de reportar solo ρ: un número único
+  (ρ = 0.876) es correcto pero **no muestra dónde están las discrepancias**.
+  El scatter con y = x señala los casos sensibles a corregir en análisis futuros.
+            """
+        )
 
     st.divider()
-    st.subheader("Tabla de sensibilidad (ranking baseline vs alternativa)")
+
+    # --- Gráfico 1 --------------------------------------------------------
+    st.markdown("### Gráfico 1 · Extremos del ranking de subatención")
+    img1 = FIGURES / "01_top_bottom_underservice.png"
+    if img1.exists():
+        st.image(str(img1), width="stretch")
+    st.markdown(
+        """
+**Análisis:** los 20 distritos más subatendidos (barras rojas) se concentran en la
+**Amazonía** (Puerto Inca y Honoria en Huánuco; Irazola y Curimaná en Ucayali) y la
+**sierra fronteriza sur** (Tarata, Estique, Palca en Tacna). Todos comparten un
+"piso" de índice ≈ 0.75 porque simultáneamente tienen oferta, actividad y acceso
+en **cero** — sus tres z-scores caen al mismo valor mínimo. Los 20 mejor atendidos
+son esencialmente **Lima Metropolitana y Callao** (Jesús María, Bellavista,
+Miraflores, Lince), con capitales departamentales colándose (Arequipa cercado,
+Wanchaq en Cusco). La brecha supera los **9 desvíos estándar** entre extremos —
+una desigualdad estructural que una sola media nacional esconde por completo.
+        """
+    )
+    st.divider()
+
+    # --- Gráfico 2 --------------------------------------------------------
+    st.markdown("### Gráfico 2 · Oferta vs actividad de emergencias")
+    img2 = FIGURES / "02_scatter_facilities_vs_atenciones.png"
+    if img2.exists():
+        st.image(str(img2), width="stretch")
+    st.markdown(
+        """
+**Análisis:** existe una relación positiva en escala log-log (más establecimientos →
+más atenciones), pero con dos fenómenos interesantes. Los **outliers hacia arriba**
+son los megahospitales limeños que concentran **millones** de atenciones en pocos
+IPRESS (ver anotaciones). La banda de puntos en el **piso (atenciones ≈ 0)** revela
+el problema central: muchos distritos tienen IPRESS *formalmente existentes* pero
+**sin actividad de emergencia reportada a SUSALUD**. Este "fantasma administrativo"
+es exactamente lo que motiva separar oferta y actividad como dimensiones independientes
+del índice compuesto — un conteo simple de establecimientos sobreestima la cobertura.
+        """
+    )
+    st.divider()
+
+    # --- Gráfico 3 --------------------------------------------------------
+    st.markdown("### Gráfico 3 · Matriz de correlación Spearman")
+    img3 = FIGURES / "03_correlation_heatmap.png"
+    if img3.exists():
+        st.image(str(img3), width="stretch")
+    st.markdown(
+        """
+**Análisis:** las correlaciones más fuertes son **estructurales**, no informativas:
+*share 30 km* con *share 15 km* (ρ ≈ 0.95, mismo indicador con distinto umbral)
+y *n establecimientos* con *n de emergencia activa* (ρ ≈ 0.77). Más revelador:
+el **índice de subatención baseline** correlaciona negativamente con oferta y
+acceso (sus componentes por construcción), pero la magnitud **no es ±1**, lo
+que confirma que el promedio de z-scores **no está dominado por una sola
+dimensión** — las tres piezas aportan información distinta. La correlación del
+índice baseline con el alternativo (≈ 0.88) anticipa el resultado del gráfico 6.
+        """
+    )
+    st.divider()
+
+    # --- Gráfico 4 --------------------------------------------------------
+    st.markdown("### Gráfico 4 · Distribución de distancias CP → emergencia")
+    img4 = FIGURES / "04_distance_histogram.png"
+    if img4.exists():
+        st.image(str(img4), width="stretch")
+    st.markdown(
+        """
+**Análisis:** la distribución es **fuertemente asimétrica con cola larga**. La
+mediana cae en ≈ 23 km, justo por encima del umbral alternativo de 15 km (línea
+naranja) y por debajo del baseline de 30 km (línea roja). Una masa densa de
+centros poblados (mayormente urbanos y periurbanos) cae bajo los 10 km, pero la
+cola persistente llega hasta **377 km** — centros poblados remotos de la
+Amazonía profunda. El gráfico justifica por qué la elección del umbral es una
+**decisión crítica**: exigir 15 km deja fuera mucho más que exigir 30 km, y
+ese gap es la fuente principal de la sensibilidad reportada en el gráfico 6.
+        """
+    )
+    st.divider()
+
+    # --- Gráfico 5 --------------------------------------------------------
+    st.markdown("### Gráfico 5 · Subatención por departamento")
+    img5 = FIGURES / "05_underservice_by_departamento.png"
+    if img5.exists():
+        st.image(str(img5), width="stretch")
+    st.markdown(
+        """
+**Análisis:** **Lima y Callao** son los únicos departamentos con mediana
+claramente **negativa** (bien atendidos). Los peores medianos son amazónicos
+(**Amazonas, Loreto, Ucayali, Madre de Dios**) y altoandinos (**Apurímac,
+Huancavelica**). El hallazgo más importante es la **alta varianza intra-
+departamental**: cada departamento tiene distritos buenos y malos, con rangos
+intercuartílicos que se superponen fuertemente. La desigualdad **no es un
+fenómeno puramente regional** — implicando que las intervenciones de política
+deben operarse a **nivel distrital**, no por bloques departamentales.
+        """
+    )
+    st.divider()
+
+    # --- Gráfico 6 --------------------------------------------------------
+    st.markdown("### Gráfico 6 · Baseline vs alternativa (análisis de sensibilidad)")
+    img6 = FIGURES / "06_baseline_vs_alternative.png"
+    if img6.exists():
+        st.image(str(img6), width="stretch")
+    st.markdown(
+        """
+**Análisis:** la nube se pega a la línea **y = x**, reflejando la alta correlación
+de Spearman (ρ = 0.876). Los puntos **alejados de la recta** son los distritos
+cuyo ranking **cambia materialmente al modificar la definición de acceso** — son
+los *movers*. Los puntos **sobre la recta** son robustos: están mal (o bien)
+parados bajo ambas especificaciones, y deben ser el foco de priorización con
+**mayor confianza**. Los *movers* ameritan un análisis caso por caso antes
+de incluirlos en una lista de focalización, porque el resultado depende
+materialmente del umbral y de la métrica de oferta que se elija.
+        """
+    )
+
+    st.divider()
+
+    # --- Tabla de sensibilidad -------------------------------------------
+    st.subheader("Tabla de sensibilidad — ranking baseline vs alternativa (top 50)")
+    st.caption(
+        "Ordenada por `rank_baseline` (peor = 1). `rank_diff` > 0 indica que el "
+        "distrito empeora en el ranking al pasar a la especificación alternativa."
+    )
     sens = load_sensitivity()
     st.dataframe(
         sens.sort_values("rank_baseline").head(50),
@@ -524,7 +685,7 @@ with tab_geo:
     png_maps = sorted(MAPS.glob("*.png"))
     for i, p in enumerate(png_maps):
         with cols[i % 2]:
-            st.image(str(p), caption=p.stem.replace("_", " ").title(), use_column_width=True)
+            st.image(str(p), caption=p.stem.replace("_", " ").title(), width="stretch")
 
     st.divider()
     st.subheader("Mapa interactivo embebido")
