@@ -60,44 +60,57 @@ def _save(fig: plt.Figure, name: str) -> None:
 # --- Gráfico 1 · Distribución del índice de cobertura --------------------------
 
 def plot_coverage_distributions(metrics: gpd.GeoDataFrame) -> None:
-    """Histogramas superpuestos: distribución del índice en baseline y alternativa.
+    """Histogramas superpuestos + tablita de distritos extremos.
 
-    Muestra la estructura bimodal del índice — con pileups en x = 0 (distritos
-    aislados totales) y x = 1/3 (distritos sin emergencia propia pero con acceso
-    vecinal). La superposición permite comparar sensibilidad entre especificaciones.
+    Histograma: distribución del índice en baseline y alternativa con los
+    pileups estructurales en 0 y 1/3 anotados. Debajo del histograma, una
+    tabla integrada al mismo gráfico enumera (izquierda) ejemplos de
+    distritos aislados totales (cobertura = 0) y (derecha) los mejor
+    atendidos (top 10% de la distribución).
     """
     df = metrics.copy()
     vals_b = df["coverage_index_baseline"].dropna()
     vals_a = df["coverage_index_alt"].dropna()
 
-    bins = np.linspace(0, 1, 41)  # 40 bins de ancho 0.025
+    # Agrupaciones para la tabla
+    at_zero_all = df[df["coverage_index_baseline"] == 0]
+    top_10pct_cutoff = df["coverage_index_baseline"].quantile(0.90)
+    top_tier_all = df[df["coverage_index_baseline"] >= top_10pct_cutoff]
+
+    n_show = 10
+    at_zero_show = at_zero_all.sort_values("n_ccpp", ascending=False).head(n_show)
+    top_tier_show = top_tier_all.nlargest(n_show, "coverage_index_baseline")
+
+    bins = np.linspace(0, 1, 41)
     counts_b, _ = np.histogram(vals_b, bins=bins)
     counts_a, _ = np.histogram(vals_a, bins=bins)
     peak = max(counts_b.max(), counts_a.max())
 
-    fig, ax = plt.subplots(figsize=(11, 6.5))
-    ax.hist(
-        vals_b,
-        bins=bins,
-        color="#2980b9",
-        alpha=0.55,
-        label=f"Baseline · 30 km · oferta por km² (n = {len(vals_b):,})",
-        edgecolor="white",
-        linewidth=0.5,
-    )
-    ax.hist(
-        vals_a,
-        bins=bins,
-        color="#c0392b",
-        alpha=0.50,
-        label=f"Alternativa · 15 km · oferta por CP (n = {len(vals_a):,})",
-        edgecolor="white",
-        linewidth=0.5,
-    )
+    # Dos axes: histograma arriba, tabla abajo (mismo fig)
+    fig = plt.figure(figsize=(11, 10.5))
+    gs = fig.add_gridspec(2, 1, height_ratios=[3.2, 1.7], hspace=0.25)
+    ax = fig.add_subplot(gs[0])
+    ax_tbl = fig.add_subplot(gs[1])
+    ax_tbl.axis("off")
 
-    # Líneas de referencia en los pileups estructurales
+    # --- Histograma ---
+    ax.hist(
+        vals_b, bins=bins, color="#2980b9", alpha=0.55,
+        label=f"Baseline · 30 km · oferta por km² (n = {len(vals_b):,})",
+        edgecolor="white", linewidth=0.5,
+    )
+    ax.hist(
+        vals_a, bins=bins, color="#c0392b", alpha=0.50,
+        label=f"Alternativa · 15 km · oferta por CP (n = {len(vals_a):,})",
+        edgecolor="white", linewidth=0.5,
+    )
     ax.axvline(0.0, color="#2c3e50", linestyle=":", linewidth=1.1, alpha=0.65)
     ax.axvline(1 / 3, color="#2c3e50", linestyle=":", linewidth=1.1, alpha=0.65)
+    # Línea que marca el umbral del top 10%
+    ax.axvline(
+        top_10pct_cutoff, color="#27ae60", linestyle="--", linewidth=1.1, alpha=0.75,
+        label=f"Umbral top 10% (x = {top_10pct_cutoff:.3f})",
+    )
 
     y_text = peak * 0.85
     ax.annotate(
@@ -105,20 +118,14 @@ def plot_coverage_distributions(metrics: gpd.GeoDataFrame) -> None:
         xy=(0.01, peak * 0.55),
         xytext=(0.11, y_text),
         arrowprops=dict(arrowstyle="-", color="#2c3e50", alpha=0.5, linewidth=0.8),
-        fontsize=9,
-        ha="left",
-        va="top",
-        color="#2c3e50",
+        fontsize=9, ha="left", va="top", color="#2c3e50",
     )
     ax.annotate(
         "x = 1/3 ≈ 0.333\n(sin emergencia propia\npero con acceso vecinal)",
         xy=(1 / 3 + 0.003, peak * 0.55),
         xytext=(0.44, y_text),
         arrowprops=dict(arrowstyle="-", color="#2c3e50", alpha=0.5, linewidth=0.8),
-        fontsize=9,
-        ha="left",
-        va="top",
-        color="#2c3e50",
+        fontsize=9, ha="left", va="top", color="#2c3e50",
     )
 
     ax.set_xlim(0, 1)
@@ -130,12 +137,55 @@ def plot_coverage_distributions(metrics: gpd.GeoDataFrame) -> None:
     ax.set_ylabel("Número de distritos", fontsize=11)
     ax.set_title(
         "Distribución del índice de cobertura en los 1 873 distritos\n"
-        "Dos especificaciones superpuestas — baseline (azul) vs alternativa (rojo)",
-        fontsize=12,
-        pad=12,
+        "Baseline (azul) vs alternativa (rojo) · línea verde = umbral top 10 %",
+        fontsize=12, pad=12,
     )
-    ax.legend(loc="upper right", frameon=True, fontsize=10)
-    fig.tight_layout()
+    ax.legend(loc="upper right", frameon=True, fontsize=9.5)
+
+    # --- Tablita debajo del eje x ---
+    def _fmt(row, include_score: bool = False) -> str:
+        label = f"{row['distrito'].title()} ({row['departamento'][:4].title()})"
+        if include_score:
+            label += f"  ·  {row['coverage_index_baseline']:.3f}"
+        return label
+
+    table_rows = []
+    for i in range(n_show):
+        left = _fmt(at_zero_show.iloc[i], include_score=False) if i < len(at_zero_show) else ""
+        right = _fmt(top_tier_show.iloc[i], include_score=True) if i < len(top_tier_show) else ""
+        table_rows.append([left, right])
+
+    col_labels = [
+        f"Aislados totales — cobertura = 0\n(n = {len(at_zero_all):,} · top {n_show} por nº de CPs)",
+        f"Mejor atendidos — top 10 % de la distribución\n(n = {len(top_tier_all):,} · umbral x ≥ {top_10pct_cutoff:.3f})",
+    ]
+
+    tbl = ax_tbl.table(
+        cellText=table_rows,
+        colLabels=col_labels,
+        loc="center",
+        cellLoc="left",
+        colLoc="center",
+        bbox=[0.02, 0.02, 0.96, 0.95],
+    )
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(9)
+
+    # Estilo del header
+    for i in range(2):
+        cell = tbl[(0, i)]
+        cell.set_facecolor("#2c3e50" if i == 0 else "#196c3a")
+        cell.get_text().set_color("white")
+        cell.get_text().set_fontweight("bold")
+        cell.set_height(0.14)
+
+    # Estilo de las filas de datos (zebrado suave)
+    for r in range(n_show):
+        for c in range(2):
+            cell = tbl[(r + 1, c)]
+            cell.set_facecolor("#f4f6f7" if r % 2 == 0 else "white")
+            cell.set_height(0.08)
+
     _save(fig, "01_coverage_distribution.png")
 
 

@@ -666,27 +666,26 @@ priorizando comprensibilidad sobre sofisticación:
 estructurales dominan el histograma:
 
 - **Pileup en `x = 0`** (≈ 479 distritos en baseline) — distritos *aislados totales*:
-  sin IPRESS de emergencia propio y sin vecino dentro del umbral. Su cobertura es
-  estructuralmente el peor valor posible.
+  sin IPRESS de emergencia propio y sin vecino dentro del umbral.
 - **Pileup en `x = 1/3 ≈ 0.333`** (≈ 632 distritos en baseline) — distritos sin
-  emergencia propia pero con **acceso vecinal pleno**: oferta y actividad locales
-  son 0, pero todos sus CPs caen dentro del umbral hacia un IPRESS de otro distrito.
-  Su cobertura proviene **enteramente** del componente de acceso
-  (0 + 0 + 1) / 3 = 0.333.
+  emergencia propia pero con **acceso vecinal pleno**: su cobertura proviene
+  enteramente del componente de acceso — (0 + 0 + 1) / 3 = 0.333.
 
-Entre ambos pileups, ~**1 111 distritos (59 %)** — la ruralidad peruana — se concentran
-en dos valores exactos. La razón es puramente estructural: cuando oferta y actividad
-son 0 y la componente de acceso está acotada a [0, 1], el índice solo puede tomar
-`access / 3`. Ver la **decisión metodológica D12** arriba.
+Juntos son ~**1 111 distritos (59 %)** — la ruralidad peruana se concentra en dos
+valores exactos. La razón es puramente estructural (ver decisión **D12**): cuando
+oferta y actividad son 0 y el acceso está acotado a [0, 1], el índice solo puede
+tomar `access / 3`.
 
-Al cambiar de baseline (azul) a **alternativa** (rojo), el pileup en 1/3 se **reduce
-y se dispersa hacia la izquierda**: endurecer el umbral de 30 km a 15 km expulsa CPs
-de la cobertura y baja a esos distritos en el índice. Es la **sensibilidad al umbral**
-que Spearman ρ = 0.891 captura numéricamente.
+Al cambiar de baseline (azul) a **alternativa** (rojo), el pileup en 1/3 se reduce
+y se dispersa hacia la izquierda: endurecer el umbral de 30 km a 15 km expulsa CPs
+de la cobertura y baja a esos distritos en el índice. Es la sensibilidad que
+ρ = 0.891 captura numéricamente.
 
-La **cola derecha** (cobertura alta) son los distritos con oferta y actividad propias
-— Lima Metropolitana, Callao y capitales departamentales. Ninguno alcanza 1 perfecto
-(requeriría ser el máximo simultáneo en las 3 dimensiones).
+La línea **verde punteada** marca el umbral del top 10 % de la distribución; los
+distritos a su derecha son los "mejor atendidos" (listados en la tabla de la
+derecha del gráfico). La **tabla integrada al pie del gráfico** enumera ejemplos
+concretos de ambos extremos — aislados totales (izquierda) y top 10 % (derecha) —
+con sus nombres de distrito y departamento para inspección directa.
         """
     )
     st.divider()
