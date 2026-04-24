@@ -16,9 +16,19 @@
 ## Limpieza (T1)
 
 - Normalización de UBIGEO a 6 dígitos, zero-padded.
-- Deduplicación por código institucional de IPRESS.
-- Filtro de coordenadas válidas (rango Perú: lat ∈ [-18.5, 0], lon ∈ [-81.5, -68.5]).
+- Deduplicación de IPRESS por `CODIGO_UNICO`.
+- Filtro de coordenadas válidas (rango Perú: lat ∈ [-18.5, 0.5], lon ∈ [-81.5, -68.0]).
 - Conversión a parquet / geoparquet en `data/processed/` para carga rápida.
+
+### Quirks del dato fuente (documentados en el pipeline)
+
+1. **IPRESS MINSA — coordenadas NORTE/ESTE invertidas.** En el CSV fuente, la columna llamada `NORTE` contiene longitudes (rango -81..-68) y `ESTE` contiene latitudes (-18..0). El loader las remapea explícitamente (`NORTE → lon`, `ESTE → lat`). Solo ~38 % de los 20 819 establecimientos trae coordenadas válidas; los demás se descartan para análisis espacial.
+
+2. **SUSALUD — anonimización con `NE_0001`.** Las columnas `NRO_TOTAL_ATENCIONES` y `NRO_TOTAL_ATENDIDOS` tienen el marcador `NE_0001` cuando la celda es < umbral de privacidad (publicación agregada por sexo-edad). Estos se parsean como NaN y se cuentan como 0 al agregar anualmente — la agregación sigue siendo informativa para la métrica distrital pero subestima modestamente los IPRESS pequeños.
+
+3. **Centros Poblados INEI — sin UBIGEO ni población.** El shapefile trae un `CÓDIGO` compuesto (10+ dígitos DEP+PROV+DIST+CCPP); el UBIGEO distrital se deriva de los primeros 6 dígitos. No trae población del CP; se usa **peso uniforme (1)** en el baseline. Una extensión con población censal (INEI CPV 2017) pasaría a especificación alternativa.
+
+4. **Separadores heterogéneos.** IPRESS usa `,`, SUSALUD usa `;`, ambos en encoding `latin-1`. El pipeline lo hard-codea por archivo.
 
 ## Integración geoespacial (T2)
 
