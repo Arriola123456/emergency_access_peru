@@ -317,6 +317,7 @@ ajustamos?
 | D9 | Índice compuesto = **promedio simple** de 3 componentes normalizadas a [0, 1] | Garantiza que el índice total viva en [0, 1]; interpretación directa como *share de cobertura*. |
 | D10 | Normalización min-max con **log-transform** para oferta y actividad | Ambas dimensiones son altamente sesgadas (Lima vs resto). El `log1p` comprime la cola larga antes del min-max, evitando que un megahospital aplaste la escala. |
 | D11 | Agregación a distrito por el **UBIGEO geométrico** | Consistente con el shapefile, no con el UBIGEO declarado. |
+| D12 | **Pileups estructurales** en `x = 0` y `x = 1/3` del índice | No son artefactos: surgen de la combinación de (a) **1 457 distritos (78 %) sin IPRESS de emergencia propio** — que fuerza `supply_01 = 0` y `activity_01 = 0` — y (b) la **normalización a [0, 1]** con el componente de acceso ya acotado por ser una proporción. Cuando oferta y actividad son 0, el índice queda reducido a `access_01 / 3`, que toma dominantemente los valores **0** (sin acceso vecinal) y **1/3** (acceso vecinal pleno: todos los CPs del distrito caen dentro del umbral hacia un IPRESS vecino). **59 % del país** se concentra en esos dos valores — es el **mapa honesto** de una geografía fragmentada vista por una métrica estandarizada. |
         """
     )
 
@@ -533,7 +534,7 @@ with tab_static:
         """
 | # | Gráfico | Pregunta que aborda | Qué se decide al verlo |
 | --- | --- | --- | --- |
-| 1 | **Extremos del ranking** (top 20 / bottom 20) | Q1, Q3 | Identificar distritos prioritarios y mejor cubiertos en una sola vista comparable. |
+| 1 | **Distribución del índice de cobertura** (histogramas superpuestos) | Q3, Q4 | Ver la estructura completa del indicador (incluyendo los pileups estructurales en 0 y 1/3) y comparar baseline vs alternativa directamente. |
 | 2 | **Oferta vs actividad** (scatter log-log) | Q1 | Separar establecimientos *formalmente existentes* de los que realmente atienden emergencias. |
 | 3 | **Matriz de correlación Spearman** | Q3 | Validar que las 3 dimensiones del índice no son redundantes entre sí. |
 | 4 | **Distribución de distancias CP → emergencia** | Q2 | Ver qué fracción de centros poblados queda bajo los umbrales de 15 km y 30 km. |
@@ -548,9 +549,11 @@ with tab_static:
 La elección apunta a **cubrir las 4 preguntas con el menor número de vistas**,
 priorizando comprensibilidad sobre sofisticación:
 
-- **Diverging barplot (1)** en vez de un barplot con los 1 873 distritos: un
-  gráfico ilegible no genera decisiones. Destacar los extremos es suficiente
-  para priorización política.
+- **Histograma superpuesto (1)** en vez de un top/bottom list: un barplot con
+  los 1 873 distritos es ilegible, y forzar un top-20 amplifica empates al
+  piso del índice. El histograma expone la **distribución completa**, hace
+  visibles los **pileups estructurales** (documentados en la decisión D12)
+  y permite comparar baseline vs alternativa en una sola vista.
 - **Scatter log-log (2)** en vez de una regresión lineal: la distribución de
   atenciones está severamente sesgada (megahospital de Lima vs posta amazónica).
   El log-log estabiliza la varianza y expone outliers sin distorsionar la relación.
@@ -572,23 +575,37 @@ priorizando comprensibilidad sobre sofisticación:
     st.divider()
 
     # --- Gráfico 1 --------------------------------------------------------
-    st.markdown("### Gráfico 1 · Extremos del ranking de cobertura")
-    img1 = FIGURES / "01_top_bottom_coverage.png"
+    st.markdown("### Gráfico 1 · Distribución del índice de cobertura")
+    img1 = FIGURES / "01_coverage_distribution.png"
     if img1.exists():
         st.image(str(img1), width="stretch")
     st.markdown(
         """
-**Análisis:** los 20 distritos **peor atendidos** (barras rojas, cobertura ≈ 0) están
-concentrados en provincias como **Ayabaca (Piura)**, **Chucuito (Puno)**, **Huamalíes
-(Huánuco)**, **Huaytará (Huancavelica)** y **Atalaya (Ucayali)** — geografía
-amazónica y altoandina donde la cobertura es **cero en oferta, actividad y acceso
-simultáneamente**. El desempate se hizo por número de CPs (distritos con más CPs
-pesan primero). Los 20 **mejor atendidos** (barras verdes, cobertura ≈ 0.87-0.97)
-son esencialmente **Lima Metropolitana y Callao** (Jesús María **0.97**, Bellavista
-**0.96**, Miraflores **0.90**), con capitales departamentales colándose (Arequipa
-cercado **0.95**, Wanchaq-Cusco **0.87**). Ninguna alcanza el 1 perfecto: nadie es
-simultáneamente el #1 en las tres dimensiones. La brecha entre extremos es
-**prácticamente el ancho completo de la escala** [0, 1].
+**Análisis:** la distribución es **bimodal por diseño** (no por azar). Dos clusters
+estructurales dominan el histograma:
+
+- **Pileup en `x = 0`** (≈ 479 distritos en baseline) — distritos *aislados totales*:
+  sin IPRESS de emergencia propio y sin vecino dentro del umbral. Su cobertura es
+  estructuralmente el peor valor posible.
+- **Pileup en `x = 1/3 ≈ 0.333`** (≈ 632 distritos en baseline) — distritos sin
+  emergencia propia pero con **acceso vecinal pleno**: oferta y actividad locales
+  son 0, pero todos sus CPs caen dentro del umbral hacia un IPRESS de otro distrito.
+  Su cobertura proviene **enteramente** del componente de acceso
+  (0 + 0 + 1) / 3 = 0.333.
+
+Entre ambos pileups, ~**1 111 distritos (59 %)** — la ruralidad peruana — se concentran
+en dos valores exactos. La razón es puramente estructural: cuando oferta y actividad
+son 0 y la componente de acceso está acotada a [0, 1], el índice solo puede tomar
+`access / 3`. Ver la **decisión metodológica D12** arriba.
+
+Al cambiar de baseline (azul) a **alternativa** (rojo), el pileup en 1/3 se **reduce
+y se dispersa hacia la izquierda**: endurecer el umbral de 30 km a 15 km expulsa CPs
+de la cobertura y baja a esos distritos en el índice. Es la **sensibilidad al umbral**
+que Spearman ρ = 0.891 captura numéricamente.
+
+La **cola derecha** (cobertura alta) son los distritos con oferta y actividad propias
+— Lima Metropolitana, Callao y capitales departamentales. Ninguno alcanza 1 perfecto
+(requeriría ser el máximo simultáneo en las 3 dimensiones).
         """
     )
     st.divider()

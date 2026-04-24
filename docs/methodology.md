@@ -75,6 +75,25 @@ Correlación de Spearman entre los dos rankings (rank 1 = peor atendido = menor 
 
 $$\rho_S = \text{Spearman}(\text{rank}(I^{\text{base}}), \text{rank}(I^{\text{alt}})) = 0.891$$
 
+### Propiedades estructurales del índice — "pileups" a 0 y 1/3
+
+La distribución del índice de cobertura es **bimodal por diseño** (no por azar): ~1 111
+distritos (59 %) se concentran en dos valores exactos — `x = 0` y `x ≈ 0.333` — visibles
+como dos picos dominantes en el Gráfico 1. Esto surge directamente de dos hechos:
+
+1. **Floor sin emergencia propia.** 1 457 distritos (78 %) no tienen IPRESS con actividad
+   de emergencia. Para estos distritos, las componentes `supply_01` y `activity_01` son
+   exactamente 0.
+2. **Normalización a [0, 1] con componente de acceso ya acotada.** El acceso vive de
+   entrada en [0, 1] (es una proporción) y no requiere min-max. Cuando oferta y actividad
+   son 0, el índice se reduce a `access_01 / 3`. La mayoría de distritos sin emergencia
+   propia tienen o todos sus CPs dentro del umbral hacia un vecino (`access = 1 → I = 1/3`)
+   o ninguno (`access = 0 → I = 0`).
+
+Los pileups **no son un artefacto a corregir**; son el reflejo honesto de una geografía
+fragmentada vista por una métrica estandarizada. Documentan el hallazgo sustantivo: una
+gran fracción del país depende de **IPRESS vecinos** para cualquier cobertura de emergencia.
+
 ## Outputs
 
 - `outputs/tables/district_metrics_baseline.csv`
