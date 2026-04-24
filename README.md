@@ -2,105 +2,243 @@
 
 Tarea 2 — Data Science. Análisis geoespacial de la desigualdad en el acceso a servicios de emergencia en salud entre distritos del Perú.
 
-## Objetivo
+---
 
-Construir un pipeline reproducible que responda a estas preguntas a nivel distrital:
+## Índice
 
-1. ¿Qué distritos tienen menor / mayor disponibilidad de establecimientos de salud y de atención de emergencias?
-2. ¿Qué distritos muestran un acceso espacial más débil desde sus centros poblados hacia servicios de emergencia?
-3. ¿Qué distritos están más / menos desatendidos combinando presencia, actividad y acceso?
-4. ¿Qué tan sensibles son los resultados al cambiar la definición analítica de "acceso"?
+- [¿Qué hace este proyecto?](#qué-hace-este-proyecto)
+- [¿Cuál es el objetivo analítico principal?](#cuál-es-el-objetivo-analítico-principal)
+- [¿Qué datasets se utilizaron?](#qué-datasets-se-utilizaron)
+- [¿Cómo se limpiaron los datos?](#cómo-se-limpiaron-los-datos)
+- [¿Cómo se construyeron las métricas distritales?](#cómo-se-construyeron-las-métricas-distritales)
+- [¿Cómo instalar las dependencias?](#cómo-instalar-las-dependencias)
+- [¿Cómo ejecutar el pipeline?](#cómo-ejecutar-el-pipeline)
+- [¿Cómo correr la app Streamlit?](#cómo-correr-la-app-streamlit)
+- [Hallazgos principales](#hallazgos-principales)
+- [Limitaciones](#limitaciones)
+- [Estrategia de branches](#estrategia-de-branches)
+- [Estructura del proyecto](#estructura-del-proyecto)
+- [Video explicativo](#video-explicativo)
 
-## Datasets
+---
 
-| Dataset | Fuente |
-| --- | --- |
-| Centros Poblados | datosabiertos.gob.pe |
-| Límites distritales (`DISTRITOS.shp`) | Repo del curso d2cml-ai/Data-Science-Python |
-| Producción de Atención de Emergencias por IPRESS | datos.susalud.gob.pe |
-| IPRESS MINSA (establecimientos de salud) | datosabiertos.gob.pe |
+## ¿Qué hace este proyecto?
 
-Los datos en bruto se descargan con `python -m src.ingest` a `data/raw/` (no versionados).
+Construye un **pipeline reproducible de análisis geoespacial** que mide la desigualdad en el acceso a servicios de emergencia en salud entre los **1 873 distritos del Perú**. Integra cuatro fuentes de datos abiertos (MINSA, SUSALUD, INEI y el shapefile distrital del curso), limpia y reconcilia los UBIGEOs, calcula la distancia de cada uno de los 136 587 centros poblados al IPRESS de emergencia más cercano, y produce:
 
-## Estructura
+- un **índice de cobertura de emergencia** por distrito en escala `[0, 1]` (1 = mejor atendido, 0 = peor), con dos especificaciones para medir sensibilidad;
+- **6 figuras estáticas** en `outputs/figures/` (histograma bimodal con tabla integrada de extremos, ranking de peor acceso, descomposición del índice en 3 dimensiones, histograma de distancias, boxplot por departamento, scatter baseline-vs-alternativa);
+- **3 choropleths** estáticos + **mapa bivariado** + **mapa folium interactivo** con los 787 IPRESS de emergencia clusterizados;
+- una **app Streamlit con 4 tabs**: *Datos y Metodología*, *Análisis Estático*, *Resultados Geoespaciales* y *Exploración Interactiva*.
 
-```
-emergency_access_peru/
-├── src/                    # Librería del proyecto
-│   ├── config.py           # Rutas, CRS, URLs, umbrales
-│   ├── utils.py            # Logger, normalización UBIGEO
-│   ├── ingest.py           # T1 — descarga y limpieza
-│   ├── geo_integration.py  # T2 — GeoDataFrames, joins, distancias
-│   ├── metrics.py          # T3 — métricas baseline + alternativa
-│   ├── viz_static.py       # T4 — plots matplotlib/seaborn
-│   └── viz_geospatial.py   # T5 — choropleth + folium
-├── app/
-│   └── streamlit_app.py    # T6 — app con 4 tabs
-├── data/
-│   ├── raw/                # Descargado por ingest.py (gitignored)
-│   └── processed/          # Parquet/GeoParquet limpios
-├── outputs/
-│   ├── figures/            # PNGs de T4
-│   ├── maps/               # HTML y PNG de T5
-│   └── tables/             # CSVs de ranking y sensibilidad
-├── notebooks/              # EDA exploratorio
-├── docs/
-│   └── methodology.md      # Supuestos, definiciones, limitaciones
-└── video/
-    └── README.md           # Link al video explicativo (≤4 min)
-```
+## ¿Cuál es el objetivo analítico principal?
 
-## Setup
+Responder cuatro preguntas de investigación:
 
-Requiere Python ≥ 3.11. Recomendado venv aislado:
+1. **Disponibilidad** — ¿qué distritos tienen menor/mayor disponibilidad de establecimientos de salud y de atención de emergencias?
+2. **Acceso espacial** — ¿qué distritos muestran acceso más débil desde sus centros poblados hacia servicios de emergencia?
+3. **Desatención combinada** — ¿qué distritos están más/menos desatendidos combinando presencia, actividad y acceso?
+4. **Sensibilidad** — ¿qué tan sensibles son los resultados al cambiar la definición analítica de "acceso"?
+
+La respuesta ejecutiva es un **índice distrital único** en `[0, 1]` que agrega las tres dimensiones (oferta, actividad, acceso) con pesos iguales, más una comparación contra una especificación alternativa (umbral 15 km en vez de 30 km; oferta por centro poblado en vez de por km²).
+
+## ¿Qué datasets se utilizaron?
+
+| Dataset | Fuente | Formato | Cobertura |
+| --- | --- | --- | --- |
+| IPRESS MINSA | datosabiertos.gob.pe | CSV (`latin-1`, sep `,`) | Directorio 2017 de establecimientos de salud — 20 819 filas, 7 951 con coordenadas |
+| Producción de Atención de Emergencias por IPRESS | datos.susalud.gob.pe | CSV (`latin-1`, sep `;`) | Atenciones de emergencia 2024 — 250 000 filas agregables a 4 293 IPRESS-año |
+| Centros Poblados INEI | datosabiertos.gob.pe | Shapefile en ZIP | 136 587 centros poblados nacionales |
+| Límites distritales (`DISTRITOS.shp`) | Repo `d2cml-ai/Data-Science-Python` | Shapefile (5 archivos companion) | 1 873 polígonos distritales |
+
+Todos se **descargan automáticamente** con `python -m src.ingest` a `data/raw/` (no versionados). Los derivados limpios quedan en `data/processed/` como `.parquet` / geoparquet.
+
+## ¿Cómo se limpiaron los datos?
+
+El pipeline `src/ingest.py` aplica cuatro limpiezas por dataset, más decisiones globales:
+
+**IPRESS MINSA**
+- Encoding `latin-1`, separador `,`.
+- **Fix crítico:** en el CSV fuente las columnas `NORTE` y `ESTE` están **invertidas** — `NORTE` contiene longitudes (rango −81..−68) y `ESTE` contiene latitudes (−18..0). El loader las remapea a `lon` y `lat`.
+- Filtro de coordenadas dentro del rango continental del Perú.
+- UBIGEO normalizado a 6 dígitos con zero-padding.
+- Deduplicación por `CODIGO_UNICO`.
+- **Resultado**: 7 951 IPRESS con coords válidas (de 20 819).
+
+**Producción de emergencias SUSALUD 2024**
+- Encoding `latin-1`, separador `;`.
+- El marcador **`NE_0001`** (anonimización de SUSALUD cuando `atenciones < umbral de privacidad`) se parsea como `NaN` y se cuenta como 0 al agregar anualmente.
+- Suma de atenciones por `(codigo, ubigeo)` → **4 293 IPRESS-año** con ~**15.8 M atenciones** efectivas no-anonimizadas.
+
+**Centros Poblados INEI**
+- Shapefile extraído del ZIP.
+- **El shapefile no trae UBIGEO explícito**; se deriva de los primeros 6 dígitos del campo `CÓDIGO` (código INEI compuesto DEP+PROV+DIST+CCPP).
+- No trae población del CP; se usa **peso uniforme (1)** en el índice.
+
+**DISTRITOS.shp**
+- UBIGEO desde `IDDIST`, normalizado a 6 dígitos.
+- Reproyección a `EPSG:4326` para Folium; a `EPSG:32718` (UTM 18S) para cálculos de distancia en metros.
+
+**Decisiones globales**
+- **Spatial join `within`** IPRESS ↔ polígonos distritales → reasigna UBIGEOs declarados inconsistentes (**corrige 600 de los 7 951 IPRESS**).
+- "IPRESS de emergencia" = `atenciones > 0` en SUSALUD 2024 (actividad efectiva, no categoría administrativa).
+- KDTree sobre coordenadas UTM 18S para calcular distancia CP → IPRESS emergencia más cercano (**O(n log m)** en ~1 s para 136 587 CPs × 787 IPRESS).
+
+Detalle completo en `docs/methodology.md` y en el tab *Datos y Metodología* de la app.
+
+## ¿Cómo se construyeron las métricas distritales?
+
+El indicador principal es un **índice de cobertura de emergencia** en escala `[0, 1]`, construido como promedio simple de **tres componentes normalizadas a [0, 1]**:
+
+| Dimensión | Variable cruda | Normalización |
+| --- | --- | --- |
+| **Oferta** | `n_emergency_per_100km2` (densidad emergencia por 100 km²) | `log1p` → min-max |
+| **Actividad** | `total_atenciones` (sumatoria anual) | `log1p` → min-max |
+| **Acceso** | `share_cp_within_30km` (fracción de CPs con IPRESS ≤ 30 km) | ninguna (ya en [0, 1]) |
+
+**Fórmula baseline**:
+
+$$I^{\text{base}}_d \;=\; \frac{\widetilde{\text{oferta}}_d \;+\; \widetilde{\text{actividad}}_d \;+\; \text{acceso}^{30}_d}{3} \;\in\; [0, 1]$$
+
+**Especificación alternativa** (sensibilidad): oferta por centro poblado (no por km²) + umbral de acceso estricto de 15 km.
+
+**Interpretación:**
+- `I = 0` → distrito en el piso simultáneamente en oferta, actividad y acceso.
+- `I = 1` → distrito es el máximo observado en las 3 dimensiones a la vez (inalcanzable en la práctica).
+
+**Sensibilidad:** Spearman entre los rankings baseline y alternativo = **0.891**.
+
+## ¿Cómo instalar las dependencias?
+
+**Requisitos:** Python ≥ 3.11 (probado con 3.14.3 usando `pyogrio` como motor geo en lugar de `fiona` por ausencia de wheel de GDAL para 3.14).
 
 ```bash
+cd <ruta-al-repo>
 python -m venv .venv
-# Windows
-.venv\Scripts\activate
+
+# Windows CMD
+.venv\Scripts\activate.bat
+
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
 # macOS / Linux
 source .venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-## Reproducción end-to-end
+> **Nota Windows PowerShell:** si al activar aparece `la ejecución de scripts está deshabilitada`, usa el binario directo del venv sin activar (`.venv\Scripts\streamlit.exe ...`) o habilítalo permanentemente con `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`.
+
+## ¿Cómo ejecutar el pipeline?
 
 ```bash
-# 1. Descargar los 4 datasets a data/raw/
-python -m src.ingest
+python -m src.ingest              # T1: descarga + limpieza de los 4 datasets
+python -m src.geo_integration     # T2: GeoDataFrames + sjoin + distancias KDTree
+python -m src.metrics             # T3: índice de cobertura [0, 1] + sensibilidad
+python -m src.viz_static          # T4: 6 figuras en outputs/figures/
+python -m src.viz_geospatial      # T5: mapas en outputs/maps/
+```
 
-# 2. Integración geoespacial (GeoDataFrames + sjoin + distancias)
-python -m src.geo_integration
+El pipeline es **idempotente y cacheado**: `ingest` no re-descarga si los archivos ya existen en `data/raw/`. Los outputs intermedios en `data/processed/` se regeneran deterministamente.
 
-# 3. Métricas distritales (baseline + alternativa + índice compuesto)
-python -m src.metrics
+## ¿Cómo correr la app Streamlit?
 
-# 4. Visualizaciones estáticas
-python -m src.viz_static
+**Windows (PowerShell)**:
+```powershell
+cd C:\Users\manue\OneDrive\Documentos\GitHub\emergency_access_peru
+.venv\Scripts\streamlit.exe run app/streamlit_app.py
+```
 
-# 5. Mapas (choropleth + folium)
-python -m src.viz_geospatial
-
-# 6. App Streamlit
+**Windows (CMD) / macOS / Linux**:
+```bash
 streamlit run app/streamlit_app.py
 ```
 
-## Resultados clave
+Se abre automáticamente en `http://localhost:8501`. La app tiene **cuatro tabs**:
 
-- **1,873** distritos analizados · **7,951** IPRESS con coordenadas válidas · **787** con actividad de emergencia en 2024.
-- **78 %** de los distritos (1,457 / 1,873) **no cuentan** con ningún IPRESS que haya reportado actividad de emergencia en 2024.
-- **Total de atenciones 2024:** ≈ 15.8 millones.
-- **Distancia mediana** desde un centro poblado al IPRESS de emergencia más cercano: **22.8 km**; máxima: 377 km (Amazonía).
-- **Índice de cobertura de emergencia en [0, 1]** — 1 = mejor atendido, 0 = peor. Se construye como promedio simple de 3 dimensiones normalizadas a [0, 1]: oferta (densidad de emergencia por km², log-normalizada), actividad (log-atenciones, normalizada) y acceso (share de CPs con emergencia ≤ 30 km).
-- **Top distritos peor atendidos (cobertura ≈ 0):** Ayabaca (Piura), Pisacoma (Puno), Jacas Grande (Huánuco), Ocoyo (Huancavelica) — todos con cero oferta, cero actividad y cero acceso simultáneamente.
-- **Mejor atendidos (cobertura ≈ 0.95):** Jesús María (0.97), Bellavista (0.96), Arequipa cercado (0.95), Lima cercado (0.92), Miraflores (0.90) — ningún distrito alcanza el 1 perfecto.
-- **Sensibilidad al cambio de especificación:** Spearman ρ = **0.891** entre el ranking baseline (umbral 30 km, densidad por km²) y la alternativa (umbral 15 km, oferta por centro poblado). La conclusión cualitativa se mantiene, pero hay reordenamientos notables en el tramo medio del ranking.
+1. **📚 Datos y Metodología** — contexto, 4 preguntas comentadas, datasets, resumen de limpieza, 12 decisiones metodológicas, fórmulas LaTeX, quirks, limitaciones y números clave.
+2. **📊 Análisis Estático** — índice de visualizaciones + 6 figuras con narrativa interpretativa debajo de cada una + tabla de sensibilidad top 50.
+3. **🗺️ Resultados Geoespaciales** — 4 choropleths + mapa folium interactivo embebido.
+4. **🔍 Exploración Interactiva** — filtros por departamento + toggle baseline/alt + slider top-N; mapa folium **cacheado** (primer render 1–3 s; cambios instantáneos) y tabla de distritos peor atendidos.
 
-## Video explicativo
+## Hallazgos principales
 
-Ver `video/README.md` para el link (≤4 min).
+- **78 % de los 1 873 distritos (1 457)** **no tienen IPRESS con actividad de emergencia** reportada en 2024. Dependen de establecimientos vecinos para cualquier cobertura.
+- **Distribución bimodal del índice**: 479 distritos en `x = 0` (aislados totales) + 632 en `x = 1/3` (sin emergencia propia pero con acceso vecinal pleno) = **59 % del país concentrado en dos valores exactos**.
+- **Mediana de distancia CP → IPRESS de emergencia más cercano: 22.8 km**; media 30 km; **máximo 377 km** (Amazonía profunda).
+- **Peor atendidos (cobertura = 0)**: Ayabaca (Piura), Pisacoma (Puno), Jacas Grande (Huánuco), Ocoyo (Huancavelica), Raimondi (Ucayali).
+- **Mejor atendidos**: Jesús María (Lima, **0.966**), Bellavista (Callao, 0.959), Arequipa cercado (**0.946**), Lima cercado (0.923), Miraflores (0.897). **Ninguno alcanza el 1 perfecto**.
+- **Sensibilidad al cambio de especificación**: Spearman ρ = **0.891** entre rankings baseline (30 km, densidad/km²) y alternativo (15 km, oferta/CP). Las conclusiones cualitativas se mantienen; hay reordenamientos notables en el tramo medio del ranking.
+- **Alta varianza intra-departamental**: incluso Lima tiene distritos con baja cobertura y departamentos amazónicos tienen excepciones con cobertura decente. **Las intervenciones de política deben ser distritales, no por bloques departamentales**.
+
+## Limitaciones
+
+Declaradas explícitamente antes de usar los resultados para política pública:
+
+- **Subregistro SUSALUD en IPRESS rurales.** La actividad medida está sesgada hacia centros urbanos con registro más robusto.
+- **Peso uniforme por centro poblado (1).** Sin integración con datos censales, un caserío de 5 personas pesa igual que un pueblo de 5 000.
+- **Distancia euclidiana, no de viaje.** Un CP a 20 km en línea recta puede estar a 4 horas por trocha; la euclidiana subestima severamente el tiempo real en sierra y selva.
+- **Umbrales 15/30 km convencionales**, no provienen de un estándar técnico formal peruano.
+- **Snapshot IPRESS 2017 vs actividad SUSALUD 2024.** Establecimientos creados o cerrados después de 2017 no aparecen en el directorio.
+- **38 % de IPRESS sin coordenadas** (12 868 de 20 819). Se descartan para análisis espacial — si esa fracción no es aleatoria respecto a ruralidad, hay sesgo en la densidad distrital.
+- **Cobertura INEI de centros poblados.** Asentamientos informales recientes o caseríos no censados no aparecen.
+- **Índice compuesto = promedio simple de 3 componentes.** No hay justificación técnica para pesos iguales; pesos distintos cambiarían el ranking.
+- **Normalización min-max dependiente de la muestra.** El máximo observado define el "1"; un outlier nuevo re-escalaría a todos.
+- **Pileups estructurales** en `x = 0` y `x = 1/3` (~59 % de distritos). Es consecuencia del diseño del índice + floor de 1 457 distritos sin emergencia propia; no es artefacto pero sí una limitación de granularidad en ese régimen.
+- **Un solo año (2024).** No capturamos tendencias ni shocks temporales (post-pandemia, feriados, eventos climáticos).
 
 ## Estrategia de branches
 
-Todo el desarrollo ocurrió en branches `feature/*`, mergeadas a `develop` y de ahí un único PR a `main`. Ver `BRANCHES.md` para el detalle de cada branch.
+Todo el desarrollo siguió un flujo **`feature/*` → `develop` → `main`**. La rama `main` solo recibe el PR final con la submission completa; **nunca se commitea directamente en ella** (evita la penalidad de −2 del rubric). Las feature branches se mergearon a `develop` con `--no-ff` para preservar la estructura en el log.
+
+| Branch | Tarea | Descripción |
+| --- | --- | --- |
+| `main` | — | Rama estable; solo recibe el merge final vía PR |
+| `develop` | — | Integración de todas las features antes del merge a `main` |
+| `feature/00-setup` | — | Scaffolding: carpetas, `.gitignore`, `requirements.txt`, README, skeletons de `src/` |
+| `feature/t1-data-ingestion` | T1 (3 pts) | Descarga reproducible + limpieza + persistencia a parquet de los 4 datasets |
+| `feature/t2-geo-integration` | T2 (3 pts) | GeoDataFrames, reproyecciones, `sjoin` IPRESS↔distritos, distancia nearest-facility via KDTree |
+| `feature/t3-district-metrics` | T3 (3 pts) | Métricas baseline + alternativa + índice compuesto + sensibilidad |
+| `feature/t4-static-viz` | T4 (2 pts) | Figuras con matplotlib/seaborn |
+| `feature/t5-geospatial-outputs` | T5 (2 pts) | 3 choropleths + mapa bivariado + folium interactivo |
+| `feature/t6-streamlit-app` | T6 (4 pts) | App Streamlit con los 4 tabs obligatorios |
+| `feature/video-and-docs` | Video (3 pts) | README inicial + methodology.md + placeholder del video |
+| `chore/qa-reproduce` | — | Verificación end-to-end antes del merge a main |
+| `feature/streamlit-docs-expansion` | — | Traducción al español de los 4 tabs + expansión del tab *Datos y Metodología* con fórmulas LaTeX |
+| `feature/static-analysis-polish` | — | Fix de deprecation `use_column_width` + índice de visualizaciones + análisis narrativo bajo cada gráfico |
+| `feature/coverage-index-01-scale` | — | Refactor del índice de subatención (z-scores invertidos) al **índice de cobertura `[0, 1]`** (1 = mejor, 0 = peor) vía min-max con log-transform |
+
+Los cambios incrementales posteriores al último merge (chart 1 como histograma superpuesto, documentación de los pileups estructurales en D12, fix del freeze en el tab *Exploración Interactiva*, rediseño de charts 2 y 3 para responder Q2 y Q3 directamente, tabla integrada dentro del chart 1, y esta reescritura del README) fueron **commits directos sobre `develop`**, sin feature branches adicionales — por instrucción explícita del usuario.
+
+## Estructura del proyecto
+
+```
+emergency_access_peru/
+├── src/                          # Librería del proyecto
+│   ├── config.py                 # Rutas, CRS, URLs, umbrales
+│   ├── utils.py                  # Logger, normalización UBIGEO
+│   ├── ingest.py                 # T1 — descarga y limpieza
+│   ├── geo_integration.py        # T2 — GeoDataFrames, joins, distancias
+│   ├── metrics.py                # T3 — índice de cobertura + sensibilidad
+│   ├── viz_static.py             # T4 — plots matplotlib/seaborn
+│   └── viz_geospatial.py         # T5 — choropleth + folium
+├── app/
+│   └── streamlit_app.py          # T6 — app con 4 tabs
+├── data/
+│   ├── raw/                      # Descargado por ingest.py (gitignored)
+│   └── processed/                # Parquet/GeoParquet limpios
+├── outputs/
+│   ├── figures/                  # PNGs de T4 (6 figuras)
+│   ├── maps/                     # PNG + HTML de T5
+│   └── tables/                   # CSVs de métricas baseline/alt + sensibilidad
+├── notebooks/                    # EDA exploratorio
+├── docs/
+│   └── methodology.md            # Supuestos, definiciones, limitaciones detalladas
+└── video/
+    └── README.md                 # Link al video explicativo (≤ 4 min)
+```
+
+## Video explicativo
+
+Ver `video/README.md` para el link del video explicativo (≤ 4 minutos).
