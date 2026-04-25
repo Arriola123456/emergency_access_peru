@@ -6,10 +6,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DATA_RAW = ROOT / "data" / "raw"
 DATA_PROCESSED = ROOT / "data" / "processed"
-OUTPUTS = ROOT / "outputs"
-FIGURES = OUTPUTS / "figures"
-MAPS = OUTPUTS / "maps"
-TABLES = OUTPUTS / "tables"
+OUTPUT = ROOT / "output"
+FIGURES = OUTPUT / "figures"
+MAPS = OUTPUT / "maps"
+TABLES = OUTPUT / "tables"
 
 for p in (DATA_RAW, DATA_PROCESSED, FIGURES, MAPS, TABLES):
     p.mkdir(parents=True, exist_ok=True)
