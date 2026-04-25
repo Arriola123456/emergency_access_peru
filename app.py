@@ -28,7 +28,7 @@ import seaborn as sns
 import streamlit as st
 from branca.colormap import LinearColormap
 
-from src.config import DATA_PROCESSED, FIGURES, MAPS
+from src.config import DATA_PROCESSED, FIGURES, MAPS, TABLES
 
 # ---------------------------------------------------------------- Page config --
 
@@ -58,7 +58,7 @@ def load_ccpp() -> gpd.GeoDataFrame:
 
 @st.cache_data
 def load_sensitivity() -> pd.DataFrame:
-    return pd.read_csv(ROOT / "outputs" / "tables" / "sensitivity_ranking.csv")
+    return pd.read_csv(TABLES / "sensitivity_ranking.csv")
 
 
 @st.cache_data(show_spinner="Construyendo mapa interactivo...")
@@ -316,7 +316,7 @@ ajustamos?
     # ───────────────────────────────────────────── 4. RESUMEN DE LIMPIEZA ──
     st.markdown("## 4. Resumen de limpieza (data cleaning)")
     st.markdown(
-        "El pipeline de ingesta (`src/ingest.py`) aplica los siguientes pasos por "
+        "El pipeline de limpieza (`src/cleaning.py` que usa `src/data_loader.py`) aplica los siguientes pasos por "
         "dataset, de forma reproducible y cacheada (no descarga si el archivo ya existe)."
     )
 
@@ -511,7 +511,7 @@ Para un distrito $d$ (identificado por su UBIGEO), definimos:
         "se mantienen (los distritos amazónicos y altoandinos siguen como los peor "
         "atendidos), pero hay **reordenamientos** notables en el tramo medio del "
         "ranking. La tabla completa de `rank_diff` por distrito está en "
-        "`outputs/tables/sensitivity_ranking.csv` y en el tab *Exploración Interactiva*."
+        "`output/tables/sensitivity_ranking.csv` y en el tab *Exploración Interactiva*."
     )
 
     # ───────────────────────────────────────── 7. QUIRKS DEL DATO FUENTE ──
@@ -840,7 +840,7 @@ with tab_geo:
         html_content = interactive.read_text(encoding="utf-8")
         st.components.v1.html(html_content, height=650, scrolling=False)
     else:
-        st.warning("Mapa interactivo no generado. Ejecuta `python -m src.viz_geospatial`.")
+        st.warning("Mapa interactivo no generado. Ejecuta `python -m src.visualization`.")
 
 
 # ----------------------------------------------- Tab 4: Interactive Exploration
