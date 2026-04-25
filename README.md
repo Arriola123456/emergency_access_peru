@@ -4,8 +4,93 @@ Tarea 2 — Data Science. Análisis geoespacial de la desigualdad en el acceso a
 
 ---
 
+## 🚀 Reproducibilidad completa desde el ZIP
+
+> **Lee esto primero si descargaste el repositorio como ZIP desde GitHub y quieres correr la app garantizando reproducibilidad total.**
+
+Esta guía ejecuta **el pipeline completo desde cero**: descarga los 4 datasets de los portales abiertos (MINSA, SUSALUD, INEI, repo del curso), limpia, integra geoespacialmente, calcula el índice de cobertura, regenera todas las figuras y mapas, y abre la app Streamlit. **No depende de los outputs pre-computados que vienen en el ZIP** — los regenera desde el código fuente, demostrando reproducibilidad punta a punta.
+
+### Pre-requisito único
+
+- **Python ≥ 3.11** instalado y disponible en el `PATH`. Verificar con:
+  ```powershell
+  python --version
+  ```
+
+### Comandos a correr en PowerShell (Windows)
+
+Copia y pega los **8 comandos** a continuación, en orden, en una ventana de PowerShell:
+
+```powershell
+cd C:\ruta\donde\descomprimi\emergency_access_peru-main
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\python.exe -m src.cleaning
+.venv\Scripts\python.exe -m src.geospatial
+.venv\Scripts\python.exe -m src.metrics
+.venv\Scripts\python.exe -m src.visualization
+.venv\Scripts\streamlit.exe run app.py
+```
+
+### ⚠️ Lo único que tienes que cambiar
+
+En la **primera línea** (`cd ...`), reemplaza `C:\ruta\donde\descomprimi\emergency_access_peru-main` por la ruta real donde descomprimiste el ZIP. Ejemplos típicos:
+
+| Si descomprimiste en… | Entonces el `cd` es… |
+|---|---|
+| Escritorio | `cd "C:\Users\<tu-usuario>\Desktop\emergency_access_peru-main"` |
+| Descargas | `cd "C:\Users\<tu-usuario>\Downloads\emergency_access_peru-main"` |
+| Documentos | `cd "C:\Users\<tu-usuario>\Documents\emergency_access_peru-main"` |
+
+El nombre del folder depende de la rama desde la que GitHub generó el ZIP — puede ser `emergency_access_peru-main`, `emergency_access_peru-develop`, o solo `emergency_access_peru`. Verifícalo con `dir` (Explorador de Windows) o `ls` antes de hacer `cd`.
+
+### Qué hace cada comando
+
+| # | Comando | Resultado | Tiempo |
+|---|---|---|---|
+| 1 | `cd ...` | Navega al folder del proyecto | instantáneo |
+| 2 | `python -m venv .venv` | Crea entorno virtual aislado | ~5 s |
+| 3 | `pip install -r requirements.txt` | Instala las ~50 dependencias (`pandas`, `geopandas`, `streamlit`, `folium`, `matplotlib`, etc.) | ~3 min |
+| 4 | `python -m src.cleaning` | **T1** — descarga ~75 MB a `data/raw/`, limpia y escribe 4 parquets en `data/processed/` | ~1 min (depende de la red) |
+| 5 | `python -m src.geospatial` | **T2** — GeoDataFrames + spatial join (corrige 600 UBIGEOs) + distancias KDTree para 136 587 CPs | ~5 s |
+| 6 | `python -m src.metrics` | **T3** — índice de cobertura `[0, 1]` baseline + alternativa + Spearman + tabla de sensibilidad | ~3 s |
+| 7 | `python -m src.visualization` | **T4 + T5** — 6 figuras estáticas + 4 choropleths + mapa folium interactivo (~70 MB de HTML) | ~30 s |
+| 8 | `streamlit run app.py` | Abre la app en `http://localhost:8501` con los 4 tabs funcionales | instantáneo |
+
+**Tiempo total esperado: ~5 minutos.**
+
+### Cuando termines de revisar la app
+
+`Ctrl + C` en la terminal detiene Streamlit limpiamente.
+
+### Si solo quieres ver la app sin regenerar (camino corto)
+
+Los pasos 4–7 son opcionales si confías en los outputs pre-computados que vienen en el ZIP. El camino mínimo de 4 comandos:
+
+```powershell
+cd C:\ruta\donde\descomprimi\emergency_access_peru-main
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+.venv\Scripts\streamlit.exe run app.py
+```
+
+> **Recomendado para el calificador:** correr los 8 comandos del camino completo. Es la única forma de validar que el pipeline reproduce los resultados a partir solamente del código y datos públicos — el rubric penaliza repos no reproducibles con hasta −2 puntos.
+
+### Solución de problemas frecuentes
+
+| Síntoma | Causa | Fix |
+|---|---|---|
+| `python no se reconoce como un comando` | Python no está en el `PATH` | Reinstalar Python marcando "Add to PATH" o usar `py -3.11` en lugar de `python` |
+| Error de `ExecutionPolicy` al activar el venv | Política de PowerShell bloquea scripts | Las instrucciones de arriba **evitan la activación**: usan siempre `.venv\Scripts\python.exe` y `.venv\Scripts\streamlit.exe` directamente |
+| `pip install` falla compilando `fiona` o `gdal` | Wheel no disponible para tu versión de Python | El proyecto usa `pyogrio` en lugar de `fiona` para evitar exactamente esto. Si aun así falla, instalar Python 3.12 LTS y crear el venv con `py -3.12 -m venv .venv` |
+| Tabs muestran `FileNotFoundError` | Cache stale o pipeline no corrió | `Ctrl + C` para detener Streamlit, correr los pasos 4–7, relanzar el paso 8 |
+| Tab *Exploración Interactiva* tarda 1–3 s | Primer render del mapa folium | Esperado. Los siguientes filtros son instantáneos por el cache de `@st.cache_data` |
+
+---
+
 ## Índice
 
+- [🚀 Reproducibilidad completa desde el ZIP](#-reproducibilidad-completa-desde-el-zip)
 - [¿Qué hace este proyecto?](#qué-hace-este-proyecto)
 - [¿Cuál es el objetivo analítico principal?](#cuál-es-el-objetivo-analítico-principal)
 - [¿Qué datasets se utilizaron?](#qué-datasets-se-utilizaron)
