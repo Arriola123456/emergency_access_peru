@@ -27,7 +27,7 @@ Tarea 2 — Data Science. Análisis geoespacial de la desigualdad en el acceso a
 Construye un **pipeline reproducible de análisis geoespacial** que mide la desigualdad en el acceso a servicios de emergencia en salud entre los **1 873 distritos del Perú**. Integra cuatro fuentes de datos abiertos (MINSA, SUSALUD, INEI y el shapefile distrital del curso), limpia y reconcilia los UBIGEOs, calcula la distancia de cada uno de los 136 587 centros poblados al IPRESS de emergencia más cercano, y produce:
 
 - un **índice de cobertura de emergencia** por distrito en escala `[0, 1]` (1 = mejor atendido, 0 = peor), con dos especificaciones para medir sensibilidad;
-- **6 figuras estáticas** en `outputs/figures/` (histograma bimodal con tabla integrada de extremos, ranking de peor acceso, descomposición del índice en 3 dimensiones, histograma de distancias, boxplot por departamento, scatter baseline-vs-alternativa);
+- **6 figuras estáticas** en `output/figures/` (histograma bimodal con tabla integrada de extremos, ranking de peor acceso, descomposición del índice en 3 dimensiones, histograma de distancias, boxplot por departamento, scatter baseline-vs-alternativa);
 - **3 choropleths** estáticos + **mapa bivariado** + **mapa folium interactivo** con los 787 IPRESS de emergencia clusterizados;
 - una **app Streamlit con 4 tabs**: *Datos y Metodología*, *Análisis Estático*, *Resultados Geoespaciales* y *Exploración Interactiva*.
 
@@ -51,7 +51,7 @@ La respuesta ejecutiva es un **índice distrital único** en `[0, 1]` que agrega
 | Centros Poblados INEI | datosabiertos.gob.pe | Shapefile en ZIP | 136 587 centros poblados nacionales |
 | Límites distritales (`DISTRITOS.shp`) | Repo `d2cml-ai/Data-Science-Python` | Shapefile (5 archivos companion) | 1 873 polígonos distritales |
 
-Todos se **descargan automáticamente** con `python -m src.ingest` a `data/raw/` (no versionados). Los derivados limpios quedan en `data/processed/` como `.parquet` / geoparquet.
+Todos se **descargan automáticamente** con `python -m src.cleaning` a `data/raw/` (no versionados). Los derivados limpios quedan en `data/processed/` como `.parquet` / geoparquet.
 
 ## ¿Cómo se limpiaron los datos?
 
@@ -133,26 +133,26 @@ pip install -r requirements.txt
 ## ¿Cómo ejecutar el pipeline?
 
 ```bash
-python -m src.ingest              # T1: descarga + limpieza de los 4 datasets
-python -m src.geo_integration     # T2: GeoDataFrames + sjoin + distancias KDTree
+python -m src.data_loader         # T1.a: solo descarga los 4 datasets a data/raw/ (opcional)
+python -m src.cleaning            # T1: descarga (cacheada) + limpieza + parquets en data/processed/
+python -m src.geospatial          # T2: GeoDataFrames + sjoin + distancias KDTree
 python -m src.metrics             # T3: índice de cobertura [0, 1] + sensibilidad
-python -m src.viz_static          # T4: 6 figuras en outputs/figures/
-python -m src.viz_geospatial      # T5: mapas en outputs/maps/
+python -m src.visualization       # T4 + T5: figuras en output/figures/ y mapas en output/maps/
 ```
 
-El pipeline es **idempotente y cacheado**: `ingest` no re-descarga si los archivos ya existen en `data/raw/`. Los outputs intermedios en `data/processed/` se regeneran deterministamente.
+El pipeline es **idempotente y cacheado**: `data_loader.download_raw()` no re-descarga si los archivos ya existen en `data/raw/`. Los outputs intermedios en `data/processed/` se regeneran deterministamente.
 
 ## ¿Cómo correr la app Streamlit?
 
 **Windows (PowerShell)**:
 ```powershell
 cd C:\Users\manue\OneDrive\Documentos\GitHub\emergency_access_peru
-.venv\Scripts\streamlit.exe run app/streamlit_app.py
+.venv\Scripts\streamlit.exe run app.py
 ```
 
 **Windows (CMD) / macOS / Linux**:
 ```bash
-streamlit run app/streamlit_app.py
+streamlit run app.py
 ```
 
 Se abre automáticamente en `http://localhost:8501`. La app tiene **cuatro tabs**:
@@ -215,30 +215,32 @@ Los cambios incrementales posteriores al último merge (chart 1 como histograma 
 
 ```
 emergency_access_peru/
+├── app.py                        # T6 — Streamlit app con los 4 tabs (raíz)
+├── README.md                     # Este archivo
+├── requirements.txt              # Dependencias Python pinneadas
 ├── src/                          # Librería del proyecto
 │   ├── config.py                 # Rutas, CRS, URLs, umbrales
-│   ├── utils.py                  # Logger, normalización UBIGEO
-│   ├── ingest.py                 # T1 — descarga y limpieza
-│   ├── geo_integration.py        # T2 — GeoDataFrames, joins, distancias
-│   ├── metrics.py                # T3 — índice de cobertura + sensibilidad
-│   ├── viz_static.py             # T4 — plots matplotlib/seaborn
-│   └── viz_geospatial.py         # T5 — choropleth + folium
-├── app/
-│   └── streamlit_app.py          # T6 — app con 4 tabs
+│   ├── utils.py                  # Logger, normalización UBIGEO, helpers
+│   ├── data_loader.py            # T1.a — descarga + lectores crudos
+│   ├── cleaning.py               # T1.b — limpieza + persistencia a parquet
+│   ├── geospatial.py             # T2 — GeoDataFrames, sjoin, distancias KDTree
+│   ├── metrics.py                # T3 — índice de cobertura [0, 1] + sensibilidad
+│   └── visualization.py          # T4 + T5 — figuras matplotlib + choropleths + folium
 ├── data/
-│   ├── raw/                      # Descargado por ingest.py (gitignored)
+│   ├── raw/                      # Descargado por data_loader (gitignored)
 │   └── processed/                # Parquet/GeoParquet limpios
-├── outputs/
+├── output/
 │   ├── figures/                  # PNGs de T4 (6 figuras)
 │   ├── maps/                     # PNG + HTML de T5
 │   └── tables/                   # CSVs de métricas baseline/alt + sensibilidad
-├── notebooks/                    # EDA exploratorio
 ├── docs/
-│   └── methodology.md            # Supuestos, definiciones, limitaciones detalladas
+│   ├── methodology.md            # Supuestos, decisiones, limitaciones detalladas
+│   └── data_dictionary.md        # Diccionario de las columnas de cada parquet
+├── notebooks/                    # EDA exploratorio
 └── video/
-    └── README.md                 # Link al video explicativo (≤ 4 min)
+    └── link.txt                  # URL del video explicativo (≤ 4 min)
 ```
 
 ## Video explicativo
 
-Ver `video/README.md` para el link del video explicativo (≤ 4 minutos).
+Ver `video/link.txt` para el URL del video explicativo (≤ 4 minutos).

@@ -96,11 +96,11 @@ gran fracción del país depende de **IPRESS vecinos** para cualquier cobertura 
 
 ## Outputs
 
-- `outputs/tables/district_metrics_baseline.csv`
-- `outputs/tables/district_metrics_alternative.csv`
-- `outputs/tables/sensitivity_ranking.csv`
-- `outputs/figures/*.png`
-- `outputs/maps/*.html` (folium) + `*.png` (matplotlib)
+- `output/tables/district_metrics_baseline.csv`
+- `output/tables/district_metrics_alternative.csv`
+- `output/tables/sensitivity_ranking.csv`
+- `output/figures/*.png`
+- `output/maps/*.html` (folium) + `*.png` (matplotlib)
 
 ## Limitaciones
 
