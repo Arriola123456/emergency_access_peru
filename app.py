@@ -493,7 +493,7 @@ Para un distrito $d$ (identificado por su UBIGEO), definimos:
         r"""
 | Dimensión | Baseline | Alternativa |
 | --- | --- | --- |
-| **Oferta** | $N^{\text{emerg}} / \text{área}$ (por 100 km²) | $N^{\text{emerg}} / |C|$ (por CP) |
+| **Oferta** | $N^{\text{emerg}} / \text{área}$ (por 100 km²) | $N^{\text{emerg}} / \lvert C \rvert$ (por CP) |
 | **Actividad** | $\ln(1 + T)$ | $\ln(1 + T)$ *(igual)* |
 | **Acceso** | share de CPs con dist ≤ **30 km** | share de CPs con dist ≤ **15 km** |
 | **Normalización** | min-max (con log para oferta y actividad) | idéntica |
