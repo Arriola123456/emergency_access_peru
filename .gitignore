@@ -1,0 +1,35 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Raw data (downloaded via script, not versioned) ---
+data/raw/*
+!data/raw/.gitkeep
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+
+# --- Streamlit ---
+.streamlit/secrets.toml
+
+# --- OneDrive artifacts ---
+~$*
