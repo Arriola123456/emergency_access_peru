@@ -1,13 +1,13 @@
 """T6 — Streamlit app: Emergency Access Peru.
 
 Cuatro tabs obligatorios (rubric):
-  1. Data & Methodology
-  2. Static Analysis
-  3. GeoSpatial Results
-  4. Interactive Exploration
+  1. Datos y Metodología
+  2. Análisis Estático
+  3. Resultados Geoespaciales
+  4. Exploración Interactiva
 
 Corre desde la raíz del repo con:
-    streamlit run app/streamlit_app.py
+    streamlit run app.py
 """
 
 from __future__ import annotations
@@ -15,8 +15,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Permite `from src...` cuando Streamlit arranca desde la raíz
-ROOT = Path(__file__).resolve().parents[1]
+# app.py vive en la raíz del repo; agregamos esa raíz al sys.path para
+# permitir `from src.config import ...` sin depender del cwd.
+ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 import folium
